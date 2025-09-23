@@ -1,0 +1,203 @@
+<div class="nav-wrapper" id="navWrapper">
+
+    <div class="logo-container">
+        <a href="index.html"><img src="./images/ericjoo_logotype.png"></a>
+        <!-- wherever your nav lives -->
+        <div class="nav-status" id="nav-status"></div>
+        <script type="module" src="/js/navstatus.js"></script>
+
+    </div>
+
+    <div class="nav-link first-link" id="archiveToggle"><img src="./images/icon_index.png"><h1>Index</h1></div>
+    <div class="nav-link"><img src="./images/icon_about.png"><h1>About</h1></div>
+    <div class="nav-link"><img src="./images/icon_contact.png"><h1>Contact</h1></div>
+    
+   
+
+<!-- Marquee Script -->
+<!-- <script type="text/javascript" src="./js/marquee.js"></script> -->
+
+</div>
+<script type="module">
+(() => {
+  const SEL_TOGGLE = '#archiveToggle';
+  const SEL_MENU   = '#archivemenu';
+  const OPEN_CLS   = 'is-visible';
+
+  // Kill previous instance if partLoader reinjects
+  if (window.__navNoise?.teardown) window.__navNoise.teardown();
+
+  // === knobs ===
+  const OPEN_MS    = 360;  // duration of noise reveal
+  const CLOSE_MS   = 180;  // cosmetic “ink in” after we hide
+  const CELL       = 12;   // square size (px); lower = finer (slower)
+  const NOISE_SCALE= 0.012; // noise frequency
+  const EASE_OUT   = t => 1 - Math.pow(1 - t, 3);
+  const EASE_IN    = t => t*t*t;
+
+  const $ = (s, r=document) => r.querySelector(s);
+  const raf = () => new Promise(r => requestAnimationFrame(r));
+  function lockScroll(on){ document.documentElement.style.overflow = on?'hidden':''; document.body.style.overflow = on?'hidden':''; }
+  function menuBG(menu){ const c=getComputedStyle(menu).backgroundColor; return (c && c!=='rgba(0, 0, 0, 0)')?c:'#171717'; }
+
+  // p5 overlay factory
+  function runNoiseOverlay({ mode, bg, duration, onFirstCover, onDone }) {
+    let firstCoverSent = false;
+    let startMs = 0;
+    const seed = Math.floor(Math.random()*1e9);
+
+    // We create a dedicated p5 instance (no conflicts with your main)
+    // eslint-disable-next-line no-undef
+    const sketch = (p) => {
+      let w=0, h=0;
+
+      p.setup = () => {
+        p.pixelDensity(1);
+        w = p.windowWidth; h = p.windowHeight;
+        p.createCanvas(w, h);
+        // style canvas as overlay
+        const c = p._renderer?.elt || p.canvas;
+        Object.assign(c.style, {
+          position:'fixed', top:'0', left:'0',
+          width:'100vw', height:'100vh',
+          zIndex:'9999', pointerEvents:'none'
+        });
+        startMs = performance.now();
+
+        // first frame: lay down a full cover so nothing peeks
+        p.noStroke();
+        p.fill(bg);
+        p.rect(0,0,w,h);
+        if (!firstCoverSent) { firstCoverSent = true; onFirstCover && onFirstCover(); }
+      };
+
+      p.windowResized = () => {
+        w = p.windowWidth; h = p.windowHeight;
+        p.resizeCanvas(w, h);
+      };
+
+      p.draw = () => {
+        const now = performance.now();
+        const t = Math.min(1, (now - startMs) / duration);
+
+        // compute progress depending on mode
+        const k = (mode === 'open') ? EASE_OUT(t) : EASE_IN(t);
+
+        // OPEN: we erase squares where noise < k
+        // CLOSE: we paint squares where noise < k
+        const nx = NOISE_SCALE, ny = NOISE_SCALE, nz = seed * 0.00001;
+
+        if (mode === 'open') {
+          // ensure cover exists (in case of resize)
+          p.noStroke();
+          p.fill(bg);
+          // do NOT repaint full cover every frame; we use erase() to punch holes
+          p.erase();
+          for (let y=0; y<h; y+=CELL) {
+            for (let x=0; x<w; x+=CELL) {
+              const n = p.noise(x*nx, y*ny, nz);
+              if (n < k) p.rect(x, y, CELL, CELL);
+            }
+          }
+          p.noErase();
+
+          if (t >= 1) { p.remove(); onDone && onDone(); }
+        } else {
+          // CLOSE: paint noise squares on top
+          p.noStroke();
+          p.fill(bg);
+          for (let y=0; y<h; y+=CELL) {
+            for (let x=0; x<w; x+=CELL) {
+              const n = p.noise(x*nx, y*ny, nz);
+              if (n < k) p.rect(x, y, CELL, CELL);
+            }
+          }
+          // at ~20% coverage, content is safe to hide already (we already hid under cover though)
+          if (t >= 1) {
+            // guarantee full cover
+            p.noStroke(); p.fill(bg); p.rect(0,0,w,h);
+            p.remove(); onDone && onDone();
+          }
+        }
+      };
+    };
+
+    const inst = new p5(sketch); // eslint-disable-line no-undef
+    return inst;
+  }
+
+  let busy = false, isOpen = false;
+
+  async function openMenu() {
+    if (busy) return; busy = true;
+    const menu = $(SEL_MENU); if (!menu) { busy = false; return; }
+    // kill any internal swipe-in in your component
+    menu.querySelectorAll('.archive-wrapper').forEach(w => { w.style.animation='none'; w.style.transform='none'; });
+
+    const bg = menuBG(menu);
+
+    // Prepare: show container but keep it invisible until the cover is painted
+    menu.classList.add(OPEN_CLS);
+    menu.style.visibility = 'hidden';
+    lockScroll(true);
+
+    runNoiseOverlay({
+      mode: 'open',
+      bg, duration: OPEN_MS,
+      onFirstCover: () => {
+        // now reveal the menu under the fully covered overlay
+        menu.style.visibility = '';
+        isOpen = true;
+      },
+      onDone: () => {
+        busy = false;
+      }
+    });
+  }
+
+  async function closeMenu() {
+    if (busy) return; busy = true;
+    const menu = $(SEL_MENU); if (!menu) { busy = false; return; }
+    const bg = menuBG(menu);
+
+    // Immediately paint a full cover first (done inside onFirstCover),
+    // then hide the menu and run a tiny cosmetic “ink in”
+    const inst = runNoiseOverlay({
+      mode: 'close',
+      bg, duration: CLOSE_MS,
+      onFirstCover: () => {
+        // hide under cover so nothing flashes
+        menu.style.visibility = 'hidden';
+        menu.classList.remove(OPEN_CLS);
+        lockScroll(false);
+        isOpen = false;
+      },
+      onDone: () => {
+        menu.style.visibility = '';
+        busy = false;
+      }
+    });
+  }
+
+  function toggle(){ if (busy) return; isOpen ? closeMenu() : openMenu(); }
+
+  // Delegated click — survives partLoader swaps
+  const onClick = (e) => {
+    const t = e.target.closest && e.target.closest(SEL_TOGGLE);
+    if (t) { e.preventDefault(); toggle(); }
+  };
+  const onKey = (e) => { if (e.key === 'Escape' && isOpen && !busy) closeMenu(); };
+
+  document.addEventListener('click', onClick, { passive: false });
+  document.addEventListener('keydown', onKey);
+
+  window.__navNoise = {
+    teardown() {
+      document.removeEventListener('click', onClick);
+      document.removeEventListener('keydown', onKey);
+      lockScroll(false);
+    }
+  };
+})();
+</script>
+

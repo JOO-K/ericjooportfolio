@@ -1,0 +1,205 @@
+#button-container {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  position: absolute;
+  z-index: 10;
+  overflow: hidden;
+}
+
+@media all and (max-width: 800px) {
+  #button-container {
+    bottom: 0px;
+    left: 0px;
+  }
+}
+
+
+.control-button {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    width: 90px;
+    height: 24px;
+    padding: 4px;
+    background-color: #f0f0f0;
+    border: 1px solid dodgerblue;
+    color:dodgerblue;
+    border-radius: 20px;
+    font-family: ReplicaLight;
+    font-size: 13px; /* Optional: adjust text size */
+    line-height: 16px;
+    transition: background-color 0.3s; /* Smooth hover transition */
+    background-color: #e0e0e0;
+    box-sizing: border-box;
+}
+
+@media all and (max-width: 800px) {
+  .control-button {
+    width: 40px;
+    height: 24px;
+    padding: 4px;
+    border-radius: 3px;
+    font-family: ReplicaLight;
+    font-size: 8px; /* Optional: adjust text size */
+    line-height: 8px;
+    transition: background-color 0.3s; /* Smooth hover transition */
+    background-color: #e0e0e0;
+    box-sizing: border-box;
+  }
+}
+
+.control-button {
+  margin-right: 5px; /* Space between buttons, except for the last one */
+  cursor: pointer;
+}
+
+
+/* Remove margin-right from the last button to avoid extra spacing */
+.control-button:last-child {
+  margin-right: 0;
+}
+
+.control-button:hover {
+    background-color: dodgerblue;
+    color: #e0e0e0;
+}
+
+.fish-speed {
+  /* Add your styles here, e.g., */
+  font-family: ReplicaLight;
+  width: 90px;
+  font-size: 16px;
+  color: dodgerblue;
+  align-self: center; /* Vertically center within the flexbox */
+  margin-left: 5px; /* Optional: Add some space between the last button and the speed text */
+  margin-right: -2px;
+}
+
+@media all and (max-width: 800px) {
+  .fish-speed {
+    width:55px;
+      font-size: 10px;
+      margin-right: 2px;
+  }
+}
+
+.hp-slide-wrapper {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: #e0e0e0;
+    overflow: hidden;
+}
+
+.hp-about-container{
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translateX(-50%) translateY(-50%);
+    width: 715px;
+    padding: 20px;
+    z-index: 4;
+}
+
+@media all and (max-width: 800px) {
+  .hp-about-container {
+      width: 350px;
+      top: 40%;
+  }
+}
+
+.hp-about-container h1{
+    font-family: Graphik;
+    font-size: 33px;
+    line-height: 48px;
+    margin: 0;
+    padding: 0;
+    color: dodgerblue;
+    pointer-events: none;
+      -webkit-user-select: none; /* Safari */
+  -ms-user-select: none; /* IE 10 and IE 11 */
+  user-select: none; /* Standard syntax */
+}
+
+@media all and (max-width: 800px) {
+  .hp-about-container h1{
+      font-family: Replica;
+      font-size: 14px;
+      line-height: 22px;
+  }
+}
+
+.hp-about-container h2{
+    font-family: Graphik;
+    font-size: 15px;
+    line-height: 15px;
+    margin: 0;
+    margin-top: 10px;
+    padding: 0;
+    color: dodgerblue;
+    pointer-events: none;
+      -webkit-user-select: none; /* Safari */
+  -ms-user-select: none; /* IE 10 and IE 11 */
+  user-select: none; /* Standard syntax */
+}
+
+@media all and (max-width: 800px) {
+  .hp-about-container h2{
+      font-size: 9px;
+      width: 200px;
+      line-height: 14px;
+      margin-top: 5px;
+  }
+}
+
+.hp-about-close{
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    width: 40px;
+    height: 40px;
+    text-align: center;
+    padding: 0px;
+    box-sizing: border-box;
+    border: 1px solid dodgerblue;
+    background-color: #e0e0e0;
+    border-radius: 50px;
+    cursor: pointer;
+}
+
+@media all and (max-width: 800px) {
+  .hp-about-close{
+      width: 25px;
+      height: 25px;
+      top: 10x;
+      right: 60px;
+  }
+}
+
+.hp-about-close h1{
+    font-family: Replica;
+    font-size: 30px;
+    margin-top: -4px;
+    margin-right: -.5px;
+}
+
+@media all and (max-width: 800px) {
+  .hp-about-close h1{
+    font-family: Replica;
+    font-size: 18px;
+    margin-top: 1px;
+  }
+}
+
+.hp-about-close:hover { 
+    background-color: dodgerblue;
+    color: #e0e0e0;
+}
+
+.hp-about-close:hover h1{
+    color: #e0e0e0;
+}

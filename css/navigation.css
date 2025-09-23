@@ -1,0 +1,140 @@
+.nav-wrapper {
+    position: fixed;
+    top: 0px;
+    left: 0px;
+    height: 100vh;
+    display: flex;
+    flex-direction: row;
+    justify-content: start;
+    align-items: left;
+    margin: 0;
+    z-index: 100000;
+    box-sizing: border-box;
+}
+
+@media all and (max-width: 800px) {
+    .nav-wrapper {}
+}
+
+.logo-container {
+    width: 250px;
+
+    height: 100px;
+    display: flex;
+    flex-direction: column;
+    align-items: left;
+    justify-content: left;
+    padding: 30px;
+    padding-left: 35px;
+    margin: 0px 0px 0px 0px;
+    border-radius: 0px 0px 8px 0px;
+
+    box-sizing: border-box;
+}
+
+@media all and (max-width: 800px) {
+    .logo-container {
+        width: 200px;
+        padding: 16px;
+    }
+}
+
+.logo-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    transition: .2s;
+    box-sizing: border-box;
+    filter: invert(1);
+    transition: .2s;
+}
+
+@media all and (max-width: 800px) {
+    .logo-container img {}
+}
+
+.logo-container img:hover {
+    filter: invert(1)sepia(20)saturate(80)hue-rotate(30deg);
+}
+
+
+
+.nav-link {
+    width: 70px;
+    min-width: 70px;
+    height: 50px;
+    margin: 0;
+    margin-left: -5px;
+    margin-top: 44px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    color: #dbdbdb;
+    border-radius: 25px;
+    box-sizing: border-box;
+    cursor: pointer;
+    transition: .1s;
+}
+
+@media all and (max-width: 800px) {
+    .nav-link {
+        margin-top: 11px;
+        min-width: 60px;
+        width: 60px;
+    }
+}
+
+.nav-link img {
+    width: 30px;
+    height: 30px;
+    object-fit: contain;
+    margin-bottom: 10px;
+    transition: .2s;
+}
+
+@media all and (max-width: 800px) {
+    .nav-link img {
+        width: 20px;
+        margin-bottom: 0px;
+    }
+}
+
+.nav-link:hover {
+    filter: invert(0)sepia(20)saturate(80)hue-rotate(30deg);
+}
+
+.first-link {
+    margin-left: 14px;
+}
+
+@media all and (max-width: 800px) {
+    .first-link {
+        margin-left: -12px;
+    }
+}
+
+.nav-link h1 {
+    font-family: monospace;
+    font-size: 13px;
+    pointer-events: none;
+    padding: 0;
+    margin: 0;
+    -webkit-user-select: none;
+    /* Safari */
+    -ms-user-select: none;
+    /* IE 10 and IE 11 */
+    user-select: none;
+    /* Standard syntax */
+}
+
+@media all and (max-width: 800px) {
+    .nav-link h1 {
+        font-size: 10px;
+    }
+}
+
+
+.nav-status {
+    margin-top: 10px;
+}

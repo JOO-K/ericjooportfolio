@@ -1,0 +1,166 @@
+.project-container {
+    display: flex;
+    margin: 0px;
+    width: calc(100vw - 80px);
+    flex-direction: column;
+    /* background-color: ; */
+    padding: 0;
+    margin: 40px;
+    padding-top: 0px;
+    box-sizing: border-box;
+    z-index: 1000;
+    justify-content: center;
+    filter: drop-shadow(0px 0px 10px);
+}
+
+.project-main-image {
+    width: 100%;
+    height: calc(40vh - 0px);
+
+}
+
+.project-main-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.project-main-image h1 {
+    position: absolute;
+    right: 30px;
+    top: calc(70vh + 40px);
+    font-family: ReplicaReg;
+    font-size: 50px;
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    padding: 10px 20px;
+    z-index: 1000;
+    border-radius: 3px 3px 3px 3px;
+
+}
+
+.project-box {
+    width: 100%;
+    padding: 30px;
+    margin: 0;
+    background-color: #e0e0e0;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+}
+
+@media all and (max-width: 800px) {
+    .project-box{
+        padding: 15px;
+        flex-direction: column;
+    }
+}
+
+.project-box .text-aisle {
+    width: 36%;
+
+}
+
+@media all and (max-width: 800px) {
+    .project-box .text-aisle{
+        width: 100%;
+    }
+}
+
+.project-box .text-aisle h1 {
+    font-family: ReplicaReg;
+    font-size: 20px;
+    color: black;
+    padding: 0;
+    margin: 0;
+}
+
+.project-box .text-aisle h2 {
+    font-family: Space Mono;
+    font-weight: 100;
+    font-size: 12px;
+    line-height: 20px;
+    color: black;
+    padding: 0;
+    margin: 0;
+    margin-top: 5px;
+}
+
+.project-box .text-aisle h3 {
+    font-family: ReplicaLight;
+    font-size: 15px;
+    line-height: 20px;
+    color: black;
+    padding: 0;
+    margin: 0;
+    margin-top: 25px;
+}
+
+@media all and (max-width: 800px) {
+    .project-box .text-aisle h3{
+        margin-top: 0px;
+    }
+}
+
+
+.project-box .image-aisle {
+    width: 58%;
+}
+
+@media all and (max-width: 800px) {
+    .project-box .image-aisle{
+        width: 100%;
+    }
+}
+
+.project-box .image-aisle img {
+    width: 100%;
+    object-fit: cover;
+    margin-bottom: 12px;
+}
+
+.project-box .image-aisle h1{
+    font-family: Space Mono;
+    font-weight: 100;
+    font-size: 12px;
+    color: rgba(0,0,0,.6);
+    padding: 0;
+    margin: -14px 0px 2px 0px;
+    text-align: right;
+}
+
+.project-home-button{
+    display: none;
+    position: fixed;
+    bottom: 50px;
+    left: 30px;
+    z-index: 100000;
+    width: 120px;
+    background: rgba(255, 255, 255, 0.01);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    text-align: center;
+    border: .5px dotted black;
+    border-radius: 7px;
+}
+
+@media all and (max-width: 800px) {
+    .project-home-button{
+        display: block;
+        position: fixed;
+        bottom: 30px;
+        left: 15px;
+        bottom: 15px;
+        z-index: 1000;
+    }
+}
+
+.project-home-button h1{
+    font-family: ReplicaLight;
+    font-size: 15px;
+    margin: 0;
+    padding: 10px 10px;
+}

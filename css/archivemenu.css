@@ -1,0 +1,296 @@
+/* ------------------------------------------
+   ARCHIVE MENU — CLEAN BASE + PANEL REVEAL
+   ------------------------------------------ */
+
+/* links inside the archive */
+a {
+  text-decoration: none;
+  color: #e3e3e3;
+}
+
+/* ===== MENU CONTAINER (controlled only by .is-visible) =====
+   Keep it block-level to avoid layout thrash; hide via opacity/visibility. */
+#archivemenu {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;              /* above page content, below tiles overlay */
+  overflow-y: auto;
+  background: #171717;        /* dark gray */
+  display: block;             /* never toggle this in JS */
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 140ms linear, visibility 0s linear 140ms;
+}
+#archivemenu.is-visible {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity 140ms linear;
+}
+
+/* If your injected component has .archive-wrapper, normalize it
+   (stop any old swipe-in, ensure it's visible when container is visible). */
+#archivemenu .archive-wrapper {
+  display: block !important;
+  position: relative;
+  min-height: 100%;
+  box-sizing: border-box;
+  background-color: #171717;
+  animation: none !important;     /* kill any @keyframes archiveload */
+  transform: none !important;
+  opacity: 1 !important;
+}
+
+/* ===== YOUR ORIGINAL STRUCTURE (kept, just color normalized) ===== */
+
+.archive-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: start;
+  width: calc(100vw - 60px);
+  padding: 35px;
+  padding-top: 150px;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.archive-container::after {
+  content: "";
+  display: block;
+  height: 100px; /* spacer for hover photo */
+  flex-shrink: 0;
+}
+
+.archive-header {
+  padding: 20px;
+  margin-bottom: 0;
+}
+
+.archive-header h1 {
+  font-family: Graphik;
+  font-size: 18px;
+  color: #e3e3e3;
+  padding: 0;
+  margin: 0 0 0 0;
+}
+
+.archive-header h2 {
+  font-family: Graphik;
+  font-size: 14px;
+  padding: 0;
+  margin: 0;
+  color: #e3e3e3;
+}
+
+.archive-box {
+  height: 28px;
+  display: flex;
+  flex-direction: row;
+  justify-content: left;
+  border-bottom: 1px dotted #e3e3e3;
+  padding: 0;
+  color: #e3e3e3;
+}
+
+.archive-box:hover {
+  background-color: dodgerblue;
+  color: white;
+}
+
+.archive-box:hover .archive-title h1 {
+  text-decoration: underline;
+}
+
+.archive-box:hover .archive-photo {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: calc(100vh);
+  width: calc(40vw - 12px);
+}
+
+.archive-box:hover .archive-photo img {
+  display: flex;
+  opacity: 1;
+  filter: invert(0);
+  mix-blend-mode: normal;
+}
+
+.archive-box h1 {
+  font-family: Graphik;
+  font-size: 20px;
+  padding: 0;
+  margin: 0;
+}
+
+.archive-title {
+  padding: 4px 0 4px 20px;
+  width: 50%;
+  border-right: 1px dotted #e3e3e3;
+  overflow: hidden;
+}
+
+.archive-title h1 {
+  font-family: Graphik;
+  font-size: 14px;
+  line-height: 23px;
+  padding: 0;
+  margin: 0;
+}
+
+.archive-info {
+  padding: 4px 0 4px 9px;
+  width: 25%;
+  border-right: 1px dotted #e3e3e3;
+  overflow: hidden;
+}
+
+.archive-info h1 {
+  font-family: Graphik;
+  font-size: 14px;
+  line-height: 23px;
+  color: #e3e3e3;
+  padding: 0;
+  margin: 0;
+}
+
+.archive-date {
+  padding: 4px 0 4px 9px;
+  width: 10%;
+  min-width: 50px;
+  border-right: 1px dotted #e3e3e3;
+}
+
+.archive-date h1 {
+  font-family: Graphik;
+  font-size: 14px;
+  line-height: 23px;
+  padding: 0;
+  margin: 0;
+}
+
+.archive-photo {
+  padding: 4px 0 4px 9px;
+  width: 40%;
+  height: 40px;
+  box-sizing: border-box;
+}
+
+.archive-photo h1 {
+  font-family: Graphik;
+  font-size: 14px;
+  line-height: 23px;
+  padding: 0;
+  margin: 0;
+}
+
+.archive-photo img {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: calc(100vh);
+  width: calc(40vw - 15px);
+  display: none;
+  object-fit: cover;
+  opacity: 1;
+  z-index: 10;
+  transition: opacity 0.8s, display 0.8s allow-discrete;
+}
+
+.archive-box:not(:hover) .archive-photo img {
+  opacity: 0;
+  mix-blend-mode: difference;
+  transition-delay: 0s;
+  display: none;
+}
+
+.archive-photospace {
+  display: none;
+  width: 40%;
+  height: 40px;
+  box-sizing: border-box;
+}
+
+.archive-box:hover .archive-photospace {
+  display: flex;
+}
+
+/* ===== REMOVE the old swipe animation entirely ===== */
+/* (No @keyframes archiveload here) */
+
+/* ===== OPTIONAL photo load flicker remains ===== */
+@keyframes archivephotoload {
+  0%   { filter: invert(.3); mix-blend-mode: difference; }
+  100% { filter: invert(0);  mix-blend-mode: normal; }
+}
+
+/* ===== PANEL TILE OVERLAY (masked reveal/cover) ===== */
+
+.archive-tiles {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  pointer-events: none;
+  z-index: 9999;   /* above everything during transition */
+  grid-template-columns: repeat(var(--cols, 16), 1fr);
+  grid-template-rows:    repeat(var(--rows, 9), 1fr);
+}
+
+.archive-tile {
+  background: #171717; /* match menu bg */
+  opacity: 0;
+  transform: translateY(-28%) scale(1.02);
+  will-change: transform, opacity;
+  animation-delay: var(--d, 0ms);
+  animation-fill-mode: forwards;
+}
+
+/* OPEN: tiles REVEAL (fade OUT) */
+.archive-tile.reveal {
+  animation-name: tileReveal;
+  animation-duration: 280ms;
+  animation-timing-function: ease-out;
+}
+@keyframes tileReveal {
+  0%   { opacity: 1; transform: translateY(-28%) scale(1.02); }
+  70%  { opacity: 0.7; transform: translateY(6%)  scale(1.00); }
+  100% { opacity: 0; transform: translateY(0%)   scale(1.00); }
+}
+
+/* CLOSE: tiles COVER (fade IN) */
+.archive-tile.cover {
+  animation-name: tileCover;
+  animation-duration: 180ms;
+  animation-timing-function: ease-in;
+}
+@keyframes tileCover {
+  0%   { opacity: 0; transform: translateY(0%)   scale(1.00); }
+  100% { opacity: 1; transform: translateY(-18%) scale(1.01); }
+}
+
+
+.archive-grid{
+  display: flex;
+  flex-wrap: wrap;
+  flex-direction: row;
+  width: 100%;
+  height: 400px;
+}
+
+.archive-grid-item{
+  width: calc(100% / 3);
+  height: 50%;
+  box-sizing: border-box;
+  border: .5px dotted white;
+  border-width: 0px .5px .5px 0px;
+}
+
+.archive-grid-item img{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: .3s;
+}
+
+.archive-grid-item img:hover{
+  filter: brightness(.2);
+}

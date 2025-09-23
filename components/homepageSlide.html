@@ -1,0 +1,29 @@
+<div class="hp-slide-wrapper">
+
+    <div class="hp-about-container" id="hp-about-container">
+        <h1><span style="text-decoration: underline;">Kyung Hyun Eric</span> is a Creative Technologist <br>working across real-time media,
+        generative AI, <br>and experimental web projects.</h1><h2>His website is currently under construction, but feel free to play with the fish.</h2>
+        <div class="hp-about-close"><h1>X</h1></div>
+    </div>
+
+    
+
+</div>
+
+<script>
+
+    document.addEventListener('DOMContentLoaded', function() {
+    const closeButton = document.querySelector('.hp-about-close');
+    const aboutContainer = document.querySelector('#hp-about-container');
+
+    if (closeButton && aboutContainer) {
+        closeButton.addEventListener('click', function() {
+            aboutContainer.style.display = 'none';
+            console.log("hp-about-container closed");
+        });
+    } else {
+        console.warn("Close button or about container not found in the DOM");
+    }
+});
+
+</script>
