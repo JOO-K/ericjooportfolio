@@ -1,79 +1,52 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-
-  <!-- Change Title of Website near Favicon -->
-  <title>Eric Joo  |  Creative Tech</title>
-
-  <!-- Meta Info talking to Browser -->
+  <title>Eric Joo | Creative Tech</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 
-  <!-- CSS / Cascading Style Sheets loaded here -->
-  <link type="text/css" rel="stylesheet" href="./css/style.css">
-  <link type="text/css" rel="stylesheet" href="./css/archivemenu.css">
-  <link type="text/css" rel="stylesheet" href="./css/navigation.css">
-  <link type="text/css" rel="stylesheet" href="./css/projects.css">
-  <link type="text/css" rel="stylesheet" href="./css/archivetoggle.css">
-  <link type="text/css" rel="stylesheet" href="./css/hpslide.css">
+  <!-- CSS -->
+  <link rel="stylesheet" href="./css/style.css">
+  <link rel="stylesheet" href="./css/archivemenu.css">
+  <link rel="stylesheet" href="./css/navigation.css">
+  <link rel="stylesheet" href="./css/projects.css">
+  <link rel="stylesheet" href="./css/archivetoggle.css">
+  <link rel="stylesheet" href="./css/hpslide.css">
 
-
-  <!-- Favicon on the website tab (small icon at top)-->
   <link rel="icon" type="image/png" href="./images/bluedot_favicon.png">
 
-  <!-- Preloaded Javscript scripts -->
+  <!-- Libs -->
   <script src="https://cdn.jsdelivr.net/npm/jquery@3.4.1/dist/jquery.min.js"></script>
+  <script src="https://unpkg.com/p5@1.11.1/lib/p5.min.js"></script>
 
-<!-- 1) p5 core -->
-<script src="https://unpkg.com/p5@1.11.1/lib/p5.min.js"></script>
-
-\
-
-<!-- 4) your global-mode bootstrap (the one that creates WEBGL for video+brush) -->
-<script type="module" src="/js/app.js"></script>
-
-
-
-
+  <!-- Your app (module) -->
+  <script type="module" src="./js/app.js"></script>
 
   <script src="https://unpkg.com/typewriter-effect@latest/dist/core.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-  <!-- Google Fonts Embed -->
+
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&family=Yarndings+12&display=swap"
-    rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Yarndings+20&display=swap" rel="stylesheet">
-  <!-- Compartment Loader  -->
-  <script type="text/javascript" src="./js/partLoader.js"></script>
-  <!-- Navigation Toggle script -->
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Yarndings+12&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Yarndings+20&display=swap" rel="stylesheet">
 
+  <!-- Part loader -->
+  <script src="./js/partLoader.js"></script>
 </head>
-
-
 <body>
- <header class="" id="navigation"></header>
-
- <div class="" id="archivemenu"></div>
-
- <div class="hp-typewriter" id="hp-typewriter"></div>
+  <header id="navigation"></header>
+  <div id="archivemenu"></div>
+  <div class="hp-typewriter" id="hp-typewriter"></div>
 
   <script>
-    var app = document.getElementById('hp-typewriter');
-
-var typewriter = new Typewriter(app, {
-  loop: false,
-  delay: 5,
-});
-
-typewriter
-  .pauseFor(0)
-  .typeString('Eric Joo (Kyung Hyun) is a Creative Technologist working with Generative AI workflows and Real-Time systems.')
-  .pauseFor(100)
-    .start();
+    const app = document.getElementById('hp-typewriter');
+    const typewriter = new Typewriter(app, { loop: false, delay: 5 });
+    typewriter
+      .pauseFor(0)
+      .typeString('Eric Joo (Kyung Hyun) is a Creative Technologist working with Generative AI workflows and Real-Time systems.')
+      .pauseFor(100)
+      .start();
   </script>
 </body>
-
 </html>
