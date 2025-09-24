@@ -1,16 +1,18 @@
-html, body {
+html,
+body {
   margin: 0;
   height: 100%;
   background: #0e111a;
   overscroll-behavior: none;
 }
+
 canvas {
   display: block;
   width: 100vw !important;
   height: 100vh !important;
 }
 
-.hp-typewriter{
+.hp-typewriter {
   position: absolute;
   top: 115px;
   left: 35px;
@@ -20,11 +22,92 @@ canvas {
   font-size: 12px;
   line-height: 18px;
   z-index: 80;
+  pointer-events: none;
+  filter: drop-shadow(0px 0px 2px #000) drop-shadow(0px 0px 3px #000) 
+  drop-shadow(0px 0px 4px #000)drop-shadow(0px 0px 4px #000)drop-shadow(0px 0px 4px #000);
 }
+
+@media all and (max-width: 800px) {
+  .hp-typewriter {
+    top: 95px;
+    left: 17px;
+    width: calc(100% - 100px);
+    font-size: 10px;
+    filter: drop-shadow(0px 0px 2px #000) drop-shadow(0px 0px 3px #000) 
+  drop-shadow(0px 0px 4px #000)drop-shadow(0px 0px 4px #000)drop-shadow(0px 0px 4px #000);
+  }
+}
+
 
 .yarndings-20 {
   font-family: "Yarndings 20", system-ui;
   font-weight: 400;
   font-style: normal;
   font-size: 15.5px;
+}
+
+/* Make the typewriter overlay non-interactive */
+#hp-typewriter,
+#hp-typewriter * {
+  pointer-events: none !important;
+}
+
+/* Keep p5 canvas at the bottom of the stack */
+canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  /* below dock, menu, nav */
+}
+
+/* Dock above canvas, below archivemenu(1000) and nav(100000) */
+#fx-dock {
+  z-index: 900 !important;
+  pointer-events: auto !important;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#fx-dock * {
+  pointer-events: auto !important;
+}
+
+/* Make sure the hidden menu never blocks taps */
+#archivemenu {
+  pointer-events: none;
+}
+
+#archivemenu.is-visible {
+  pointer-events: auto;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #0e111a;
+  overscroll-behavior: none;
+}
+
+canvas {
+  display: block;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 0;
+  /* canvas at the bottom */
+}
+
+/* typewriter stays non-interactive */
+#hp-typewriter,
+#hp-typewriter * {
+  pointer-events: none !important;
+}
+
+/* FX dock sits above canvas(0) and below menu(1000)/nav(100000) */
+#fx-dock {
+  z-index: 900 !important;
+  pointer-events: auto;
+  touch-action: none;
 }

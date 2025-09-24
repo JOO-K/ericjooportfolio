@@ -1,17 +1,24 @@
-// videothreshold.js — solid white threshold grid (amped impacts + wild joystick)
+// videothreshold.js — solid white threshold grid (raindrops + stroke length by joystick)
+// + OPTIONAL (only while joystick active): shape morph (line→cross→diamond→dot) + light color bloom
+//
 // Hover: attract crosses toward the pointer.
-// Click/tap: ultra-strong "bullet-hole" (explosive kick + shove) that grows/holds/heals.
+// Click/tap: strong "bullet-hole" (explosive kick + shove) that grows/holds/heals.
 // Joystick:
-//   - Y: spawns holes procedurally (rate & radius by |Y|, 0..12 Hz, 1–4 holes/tick, cursor-biased).
-//   - X: spawns knife cuts (rate by |X| up to 8 Hz, 1–3 cuts/tick, angle ±80°, thick band, hard push).
-// Draws full grid every frame with solid stroke.
+//   - Y axis = RAINDROPS
+//       * y > 0  => larger holes, lower frequency (heavy drops)
+//       * y < 0  => smaller holes, higher frequency (drizzle)
+//       * |y|    => intensity (both radius & rate scale with magnitude)
+//   - X axis = STROKE LENGTH scale (left = shorter, right = longer)
+//       * while joystick is active, also morphs shape (line→cross→diamond→dot)
+//
+// Draws full grid every frame with solid stroke when idle (performance-friendly).
 
 import { CONFIG } from './config.js';
 import { VideoPlaylist } from './playlist.js';
 
 export default class VideoThresholdEffect {
   constructor(opts = {}) {
-    this.name = 'Video Threshold Grid (amped holes + knife cuts)';
+    this.name = 'Video Threshold Grid (raindrops + stroke length)';
 
     // video sharing
     this.video = opts.playlist || null;
@@ -32,7 +39,7 @@ export default class VideoThresholdEffect {
     this.strokeMax   = 2.6;
     this.sizeMin     = 2;
     this.sizeMax     = 0.90;
-    this.strokeColor = 255;   // pure white
+    this.strokeColor = 255;   // pure white (idle)
 
     // hover attraction
     this.pointerX = -1;
@@ -41,31 +48,22 @@ export default class VideoThresholdEffect {
     this.hoverPull   = 1200;  // force
 
     // ===== Bullet-hole ripple timing (finite: grow → hold → decay) =====
-    this.HOLE_RADIUS_BASE = 150; // base radius (click)
+    this.HOLE_RADIUS_BASE = 150; // default radius (click)
     this.GROW_TIME   = 0.10;     // faster pop
     this.HOLD_TIME   = 0.25;
     this.DECAY_TIME  = 0.60;
 
-    // edge & inside behaviors — **amped**
+    // edge & inside behaviors — strong
     this.EDGE_BAND     = 28;     // px — shove band while growing
-    this.EDGE_PUSH     = 9000;   // ↑ MUCH stronger edge shove
-    this.INSIDE_PUSH   = 14000;  // ↑ MUCH stronger inside shove
+    this.EDGE_PUSH     = 9000;
+    this.INSIDE_PUSH   = 14000;
 
-    // extra **instantaneous explosive kick** early in the event
+    // extra instantaneous explosive kick early in the event
     this.IMPACT_WINDOW = 0.085;  // s, during which we inject velocity
     this.IMPULSE_VEL   = 2200;   // px/s at unit depth (inside) — added to vx,vy
 
-    this.MAX_RIPPLES = 14;
-    this.ripples = [];           // { x, y, t0, radius? }
-
-    // ===== Knife cuts (finite) =====
-    this.cuts = [];              // { x0, y0, angle, t0 }
-    this.CUT_GROW  = 0.07;
-    this.CUT_HOLD  = 0.20;
-    this.CUT_DECAY = 0.55;
-    this.CUT_BAND_BASE = 44;     // half-width px at low intensity
-    this.CUT_PUSH      = 11000;  // stronger separation
-    this.MAX_CUTS      = 14;
+    this.MAX_RIPPLES = 18;
+    this.ripples = [];           // { x, y, t0, radius }
 
     // springs to center
     this.springK = 40;
@@ -78,26 +76,62 @@ export default class VideoThresholdEffect {
     this._dt = 1/60;
     this._canvas = null;
 
-    // ===== Joystick-driven procedural spawning =====
+    // ===== Joystick-driven parameters =====
     this._jx = 0;           // last joystick X
     this._jy = 0;           // last joystick Y
-    this.holeRateHz = 0;    // 0..~12 Hz
-    this.cutRateHz  = 0;    // 0..~8 Hz
-    this.holeClock  = 0;    // sec accumulator
-    this.cutClock   = 0;    // sec accumulator
+    this._jmag = 0;         // last joystick magnitude 0..1
+    this._jactive = false;  // last "active" flag (from UI) or inferred by mag
+
+    // Raindrops
+    this.dropRateHz   = 0;  // 0..~20 Hz (slightly higher than before)
+    this.dropClockSec = 0;  // accumulator
+    this.dropRadius   = this.HOLE_RADIUS_BASE;
+
+    // Stroke length scaling (cross arm length)
+    this.strokeLenScale = 1.0; // 0.5..1.9 typically
+
+    // Shape morph phase (only used while joystick active)
+    this._shapePhase = 0;
+
+    // Lightweight color settings (only used while joystick active)
+    this._hueBase = 210;     // center hue
+    this._hueSpan = 50;      // ± span
+    this._bloom = 0.6;       // 0..1 bloom mix
+    this._joyActiveEps = 0.12;
   }
 
-  // Joystick: map axes to procedural spawners
-  //  - |Y| → holes (0..12 Hz), radius scales with |Y|
-  //  - |X| → cuts  (0..8 Hz),  band & angle scale with X (±80°)
-  onJoystick({ x = 0, y = 0 } = {}) {
-    const ease = (v) => Math.pow(Math.min(1, Math.max(0, Math.abs(v))), 0.85);
-
+  // Joystick mapping:
+  //  Y>0  => THICC low-rate rain (big holes, slow cadence)
+  //  Y<0  => DRIZZLE high-rate rain (small holes, fast cadence)
+  //  |Y|  => intensity
+  //  X    => stroke length scale (left shorter, right longer) + (when active) shape morph
+  onJoystick({ x = 0, y = 0, mag = 0, active = false } = {}) {
     this._jx = x;
     this._jy = y;
+    this._jmag = Math.max(0, Math.min(1, mag || 0));
+    this._jactive = !!active || this._jmag > this._joyActiveEps;
 
-    this.holeRateHz = 12 * ease(y);  // go wild
-    this.cutRateHz  =  8 * ease(x);
+    const magY = Math.min(1, Math.max(0, Math.abs(y)));
+
+    // Frequency — slightly higher overall; drizzle fastest
+    const MAX_HZ = 20;                  // was 15
+    const baseHz = MAX_HZ * magY;
+    this.dropRateHz = y >= 0 ? baseHz * 0.45 : baseHz * 1.20; // heavy slower, drizzle faster
+
+    // Radius — smaller overall; drizzle gets smaller minimum
+    const R_SMALL = 40;   // was 70
+    const R_LARGE = 240;
+    this.dropRadius = y >= 0
+      ? lerp(this.HOLE_RADIUS_BASE, R_LARGE, magY)   // y up → bigger (but same max as before)
+      : lerp(R_SMALL, this.HOLE_RADIUS_BASE, magY);  // y down → smaller
+
+    // Stroke length — map X into ~0.55..1.9
+    const magX = Math.min(1, Math.max(0, Math.abs(x)));
+    const minS = 0.55, maxS = 1.9;
+    this.strokeLenScale = x >= 0 ? lerp(1.0, maxS, magX) : lerp(1.0, minS, magX);
+
+    // Shape morph phase (0..1) only used while active
+    this._shapePhase = magX;
   }
 
   preload(p) {}
@@ -194,42 +228,10 @@ export default class VideoThresholdEffect {
     return -1; // finished
   }
 
-  // finite cut profile: grow → hold → decay; returns band half-width (otherwise <0 done)
-  _cutBand(now, cut) {
-    const age = Math.max(0, now - cut.t0);
-    if (age < this.CUT_GROW) {
-      const t = this._smoothstep(age / this.CUT_GROW);
-      return cut.band * (0.35 + 0.65 * t);
-    }
-    if (age < this.CUT_GROW + this.CUT_HOLD) {
-      return cut.band;
-    }
-    const d = age - (this.CUT_GROW + this.CUT_HOLD);
-    if (d < this.CUT_DECAY) {
-      const t = 1 - this._smoothstep(d / this.CUT_DECAY);
-      return cut.band * (0.35 + 0.65 * t);
-    }
-    return -1;
-  }
-
   // spawn helpers
   _spawnRipple(x, y, tSec, radius) {
     this.ripples.push({ x, y, t0: tSec, radius: radius ?? this.HOLE_RADIUS_BASE });
     if (this.ripples.length > this.MAX_RIPPLES) this.ripples.shift();
-  }
-  _spawnCut(p, angleRad, tSec, bandPx) {
-    // center along perpendicular spacing with jitter
-    const cx = p.width * 0.5;
-    const cy = p.height * 0.5;
-    const span = (p.width + p.height) * 0.50;
-    const jitter = (Math.random() - 0.5) * span;
-    const nx = Math.cos(angleRad + Math.PI * 0.5);
-    const ny = Math.sin(angleRad + Math.PI * 0.5);
-    const x0 = cx + nx * jitter;
-    const y0 = cy + ny * jitter;
-
-    this.cuts.push({ x0, y0, angle: angleRad, t0: tSec, band: bandPx ?? this.CUT_BAND_BASE });
-    if (this.cuts.length > this.MAX_CUTS) this.cuts.shift();
   }
 
   update(p, dtMs) {
@@ -238,30 +240,27 @@ export default class VideoThresholdEffect {
 
     p.background(CONFIG.BG_COLOR);
 
-    // prune finished ripples / cuts
+    // prune finished ripples
     const now = p.millis() * 0.001;
     this.ripples = this.ripples.filter(rp => this._rippleRadius(now, rp) >= 0);
-    this.cuts    = this.cuts.filter(ct => this._cutBand(now, ct) >= 0);
 
-    // ===== Joystick procedural spawning =====
-    const dtSec = this._dt;
+    // ===== Joystick procedural "raindrops" =====
+    // Only actually spawn if joystick Y is contributing some rate (same as before).
+    if (this.dropRateHz > 0.001) {
+      this.dropClockSec += this._dt;
+      const period = 1 / this.dropRateHz;
 
-    // Holes: bias near pointer if present, else random
-    if (this.holeRateHz > 0.001) {
-      this.holeClock += dtSec;
-      const period = 1 / this.holeRateHz;
-      while (this.holeClock >= period) {
-        this.holeClock -= period;
+      const dropsPerTickBase = 1 + Math.floor(Math.min(1, Math.abs(this._jy)) * 3); // 1..4
+      while (this.dropClockSec >= period) {
+        this.dropClockSec -= period;
 
-        const ay = Math.min(1, Math.max(0, Math.abs(this._jy)));
-        const holesPerTick = 1 + Math.floor(ay * 3); // 1..4
-        const rad = this.HOLE_RADIUS_BASE * (0.70 + 0.90 * ay);
-
-        for (let h = 0; h < holesPerTick; h++) {
+        const dropsThisTick = dropsPerTickBase;
+        for (let h = 0; h < dropsThisTick; h++) {
           let x, y;
+          const rad = this.dropRadius * (0.85 + Math.random() * 0.3); // slight variance
           if (this.pointerX >= 0 && this.pointerY >= 0) {
             // jitter around the cursor for painterly control
-            const jitterR = rad * 0.7 * (Math.random() * 0.6);
+            const jitterR = rad * 0.65 * (Math.random() * 0.8);
             const theta = Math.random() * Math.PI * 2;
             x = this.pointerX + Math.cos(theta) * jitterR;
             y = this.pointerY + Math.sin(theta) * jitterR;
@@ -273,30 +272,7 @@ export default class VideoThresholdEffect {
         }
       }
     } else {
-      this.holeClock = 0;
-    }
-
-    // Cuts: angle by X (±80°), band grows with |X|, multiple cuts per tick
-    if (this.cutRateHz > 0.001) {
-      this.cutClock += dtSec;
-      const period = 1 / this.cutRateHz;
-      while (this.cutClock >= period) {
-        this.cutClock -= period;
-
-        const ax = Math.min(1, Math.max(0, Math.abs(this._jx)));
-        const maxRad = (80 * Math.PI) / 180;
-        const angle = this._jx * maxRad;
-        const band = this.CUT_BAND_BASE * (0.9 + 2.2 * ax); // wider with X
-        const cutsPerTick = 1 + Math.floor(ax * 2); // 1..3
-
-        for (let c = 0; c < cutsPerTick; c++) {
-          // tiny angle jitter so multiple cuts don't overlap perfectly
-          const jitter = (Math.random() - 0.5) * (8 * Math.PI / 180);
-          this._spawnCut(p, angle + jitter, now, band);
-        }
-      }
-    } else {
-      this.cutClock = 0;
+      this.dropClockSec = 0;
     }
   }
 
@@ -306,15 +282,14 @@ export default class VideoThresholdEffect {
     const cell = this.cell, cols = this.cols, rows = this.rows, dt = this._dt;
     const tSec = p.millis() * 0.001;
 
-    const phase = this.phaseTick % this.PHASES; this.phaseTick++;
+    const gridPhase = this.phaseTick % this.PHASES; this.phaseTick++;
 
     p.push();
     p.noFill();
-    p.stroke(this.strokeColor); // solid white
 
     for (let gy = 0; gy < rows; gy++) {
       for (let gx = 0; gx < cols; gx++) {
-        if (((gx + gy) % this.PHASES) !== phase) continue;
+        if (((gx + gy) % this.PHASES) !== gridPhase) continue;
 
         const cx = gx * cell + cell * 0.5;
         const cy = gy * cell + cell * 0.5;
@@ -344,7 +319,9 @@ export default class VideoThresholdEffect {
 
         const now = tSec;
 
-        // ===== bullet-hole ripples (amped) =====
+        // ===== bullet-hole ripples (strong) =====
+        // Also compute a small "influence" for optional color bloom (only used when active)
+        let colorInfluence = 0;
         for (let r = 0; r < this.ripples.length; r++) {
           const rp = this.ripples[r];
           const rad = this._rippleRadius(now, rp);
@@ -356,6 +333,7 @@ export default class VideoThresholdEffect {
 
           if (d < rad) {
             const depth = (rad - d) / Math.max(rad, 1);
+            colorInfluence = Math.max(colorInfluence, depth * 0.9);
             const mag = this.INSIDE_PUSH * (0.85 + 0.30 * Math.random()) * depth;
             fx += (dx / d) * mag;
             fy += (dy / d) * mag;
@@ -373,40 +351,12 @@ export default class VideoThresholdEffect {
               const band = Math.abs(d - rad);
               if (band <= this.EDGE_BAND) {
                 const u = 1 - band / this.EDGE_BAND;
+                colorInfluence = Math.max(colorInfluence, u * 0.6);
                 const mag = this.EDGE_PUSH * (0.9 + 0.2 * Math.random()) * u;
                 fx += (dx / d) * mag;
                 fy += (dy / d) * mag;
               }
             }
-          }
-        }
-
-        // ===== knife cuts (thick band, hard push) =====
-        for (let k = 0; k < this.cuts.length; k++) {
-          const ct = this.cuts[k];
-          const band = this._cutBand(now, ct);
-          if (band < 0) continue;
-
-          const nx = Math.cos(ct.angle + Math.PI * 0.5);
-          const ny = Math.sin(ct.angle + Math.PI * 0.5);
-
-          const dx = (cx + ox) - ct.x0;
-          const dy = (cy + oy) - ct.y0;
-          const dist = dx * nx + dy * ny; // signed distance to line
-          const ad = Math.abs(dist);
-
-          if (ad <= band) {
-            const u = 1 - ad / band; // 0..1 center strongest
-            const dir = Math.sign(dist) || 1;
-
-            // force apart along normal
-            const mag = this.CUT_PUSH * (0.85 + 0.3 * Math.random()) * u;
-            fx += nx * mag * dir;
-            fy += ny * mag * dir;
-
-            // tiny shear velocity for extra drama
-            vx += nx * 300 * dir * u;
-            vy += ny * 300 * dir * u;
           }
         }
 
@@ -423,20 +373,69 @@ export default class VideoThresholdEffect {
         this.state[sIdx + 2] = vx;
         this.state[sIdx + 3] = vy;
 
-        // draw cross (solid)
+        // --- appearance --------------------------------------
+
+        // stroke weight by darkness
         const br = this._brightnessAt(cx, cy, p);
         const darkness = 1 - Math.min(Math.max(br / 255, 0), 1);
         const w = this.strokeMin + darkness * (this.strokeMax - this.strokeMin);
         const sizePx = Math.max(this.sizeMin, darkness * (cell * this.sizeMax));
-        const angle = tSec * 0.7 + gx * 0.05 - gy * 0.04;
 
+        const angle = tSec * 0.7 + gx * 0.05 - gy * 0.04;
+        const lenScale = this.strokeLenScale; // 0.55..1.9
+        const rlen = sizePx * 0.5 * lenScale;
+
+        // IDLE (fast path): pure white rotating cross, exactly like your original
+        if (!this._jactive) {
+          p.stroke(this.strokeColor);
+          p.strokeWeight(w);
+          p.push();
+          p.translate(cx + ox, cy + oy);
+          p.rotate(angle);
+          p.line(-rlen, 0, rlen, 0);
+          p.line(0, -rlen, 0, rlen);
+          p.pop();
+          continue;
+        }
+
+        // ACTIVE (joystick engaged): lightweight color + shape morph
+        // Color: cheap HSL sine (no noise), with subtle bloom from nearby impacts
+        const hueCenter = this._hueBase;
+        const hue = (hueCenter + this._hueSpan * Math.sin(0.5 * tSec + 0.08 * gx - 0.07 * gy) 
+                     + this._hueSpan * this._bloom * colorInfluence) % 360;
+        const sat = 54 + Math.floor(28 * Math.min(1, colorInfluence * 1.2));
+        const lit = 62 + Math.floor(12 * Math.min(1, colorInfluence));
+        p.stroke(`hsl(${(hue+360)%360}, ${sat}%, ${lit}%)`);
         p.strokeWeight(w);
+
+        // Morph: map |X|∈[0,1] → 3 stages (0..1..2..3)
+        const shapePhase = this._shapePhase * 3.0; // 0..3
+        const stage = Math.floor(shapePhase);      // 0,1,2
+        const localT = Math.max(0, Math.min(1, shapePhase - stage)); // 0..1
+
         p.push();
         p.translate(cx + ox, cy + oy);
         p.rotate(angle);
-        const rlen = sizePx * 0.5;
-        p.line(-rlen, 0, rlen, 0);
-        p.line(0, -rlen, 0, rlen);
+
+        if (stage === 0) {
+          // line → cross
+          drawLine(p, rlen);
+          if (localT > 0) {
+            p.push();
+            p.drawingContext.globalAlpha = localT;
+            drawCross(p, rlen);
+            p.pop();
+          }
+        } else if (stage === 1) {
+          // cross → diamond
+          p.push(); p.drawingContext.globalAlpha = 1 - localT; drawCross(p, rlen);   p.pop();
+          p.push(); p.drawingContext.globalAlpha = localT;     drawDiamond(p, rlen); p.pop();
+        } else {
+          // diamond → dot
+          p.push(); p.drawingContext.globalAlpha = 1 - localT; drawDiamond(p, rlen); p.pop();
+          p.push(); p.drawingContext.globalAlpha = localT;     drawDot(p, rlen * 0.9); p.pop();
+        }
+
         p.pop();
       }
     }
@@ -444,5 +443,26 @@ export default class VideoThresholdEffect {
   }
 }
 
+/* ===== draw helpers (keep stroke state from caller) ===== */
+function drawLine(p, len) {
+  // single horizontal line (we're already rotated)
+  p.line(-len, 0, len, 0);
+}
+function drawCross(p, len) {
+  p.line(-len, 0, len, 0);
+  p.line(0, -len, 0, len);
+}
+function drawDiamond(p, len) {
+  p.beginShape();
+  p.vertex(0, -len);
+  p.vertex(len, 0);
+  p.vertex(0, len);
+  p.vertex(-len, 0);
+  p.endShape(p.CLOSE);
+}
+function drawDot(p, r) {
+  p.circle(0, 0, Math.max(2, r) * 2);
+}
+
 /* ===== tiny helpers ===== */
-function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+function lerp(a, b, t) { return a + (b - a) * Math.max(0, Math.min(1, t)); }

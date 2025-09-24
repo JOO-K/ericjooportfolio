@@ -15,7 +15,7 @@ a {
   inset: 0;
   z-index: 1000;              /* above page content, below tiles overlay */
   overflow-y: auto;
-  background: #171717;        /* dark gray */
+  background: #171717;        /* dark graay */
   display: block;             /* never toggle this in JS */
   visibility: hidden;
   opacity: 0;
@@ -293,4 +293,100 @@ a {
 
 .archive-grid-item img:hover{
   filter: brightness(.2);
+}/* ------------------------------------------
+   ARCHIVE MENU — CLEAN BASE + PANEL REVEAL
+   ------------------------------------------ */
+
+/* links inside the archive */
+a {
+  text-decoration: none;
+  color: #e3e3e3;
 }
+
+/* ===== MENU CONTAINER (visibility/opacity + pointer events fix) ===== */
+#archivemenu {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;              /* above page content, below dock(900 uses below, this stays above) */
+  overflow-y: auto;
+  background: #171717;
+  display: block;             /* never toggle in JS */
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;       /* <— IMPORTANT: don't block taps when hidden */
+  transition: opacity 140ms linear, visibility 0s linear 140ms;
+}
+#archivemenu.is-visible {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;       /* <— clickable only when visible */
+  transition: opacity 140ms linear;
+}
+
+/* If your injected component has .archive-wrapper, normalize it */
+#archivemenu .archive-wrapper {
+  display: block !important;
+  position: relative;
+  min-height: 100%;
+  box-sizing: border-box;
+  background-color: #171717;
+  animation: none !important;
+  transform: none !important;
+  opacity: 1 !important;
+}
+
+/* ===== your archive styles (kept) ===== */
+.archive-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: start;
+  width: calc(100vw - 60px);
+  padding: 35px;
+  padding-top: 150px;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.archive-container::after { content:""; display:block; height:100px; flex-shrink:0; }
+
+.archive-header { padding:20px; margin-bottom:0; }
+.archive-header h1 { font-family: Graphik; font-size:18px; color:#e3e3e3; margin:0; }
+.archive-header h2 { font-family: Graphik; font-size:14px; margin:0; color:#e3e3e3; }
+
+.archive-box {
+  height: 28px; display:flex; flex-direction:row; justify-content:left;
+  border-bottom:1px dotted #e3e3e3; padding:0; color:#e3e3e3;
+}
+.archive-box:hover { background-color:dodgerblue; color:white; }
+.archive-box:hover .archive-title h1 { text-decoration:underline; }
+.archive-box:hover .archive-photo { position:fixed; top:0; right:0; height:100vh; width:calc(40vw - 12px); }
+
+.archive-box h1 { font-family: Graphik; font-size:20px; margin:0; }
+
+.archive-title { padding:4px 0 4px 20px; width:50%; border-right:1px dotted #e3e3e3; overflow:hidden; }
+.archive-title h1 { font-family: Graphik; font-size:14px; line-height:23px; margin:0; }
+
+.archive-info { padding:4px 0 4px 9px; width:25%; border-right:1px dotted #e3e3e3; overflow:hidden; }
+.archive-info h1 { font-family: Graphik; font-size:14px; line-height:23px; color:#e3e3e3; margin:0; }
+
+.archive-date { padding:4px 0 4px 9px; width:10%; min-width:50px; border-right:1px dotted #e3e3e3; }
+.archive-date h1 { font-family: Graphik; font-size:14px; line-height:23px; margin:0; }
+
+.archive-photo { padding:4px 0 4px 9px; width:40%; height:40px; box-sizing:border-box; }
+.archive-photo img {
+  position:fixed; top:0; right:0; height:100vh; width:calc(40vw - 15px);
+  display:none; object-fit:cover; opacity:1; z-index:10;
+  transition: opacity 0.8s, display 0.8s allow-discrete;
+}
+.archive-box:not(:hover) .archive-photo img { opacity:0; mix-blend-mode:difference; display:none; }
+
+.archive-photospace { display:none; width:40%; height:40px; box-sizing:border-box; }
+.archive-box:hover .archive-photospace { display:flex; }
+
+/* optional photo load flicker */
+@keyframes archivephotoload {
+  0% { filter:invert(.3); mix-blend-mode:difference; }
+  100% { filter:invert(0); mix-blend-mode:normal; }
+}
+
+/* (tile overlay CSS omitted here since you said "fade" works well now) */
