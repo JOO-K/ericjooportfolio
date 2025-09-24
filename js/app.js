@@ -56,14 +56,8 @@ function sizeCanvasToViewport(p) {
     c.style.width = '100vw';
     c.style.height = '100vh';
     c.style.display = 'block';
-    c.style.zIndex = '0'; // keep canvas at the bottom
+    c.style.zIndex = '0'; // canvas at bottom
   }
-}
-
-// (kept for completeness; we’re not touching your nav/menu CSS)
-function ensureStacking() {
-  // your nav is already super high (100000) via CSS; leave as-is
-  // your archivemenu is 1000 via CSS; leave as-is
 }
 
 function boot(effectKey = currentKey) {
@@ -83,7 +77,6 @@ function boot(effectKey = currentKey) {
       p.pixelDensity(1);
       p.createCanvas(1, 1);
       sizeCanvasToViewport(p);
-      ensureStacking();
       p.textAlign(p.CENTER, p.CENTER);
 
       if (!sharedPlaylist) {
@@ -97,17 +90,16 @@ function boot(effectKey = currentKey) {
       if (currentEffect && !currentEffect.video) currentEffect.video = sharedPlaylist;
       currentEffect.setup?.(p);
 
-      wireDock(onJoystickInput);   // build joystick + preview + dots; subscribe to joystick
-      setActiveDot(effectKey);     // highlight dot + set preview
-      syncDockSizes();             // match widths exactly
+      wireDock(onJoystickInput);   // joystick + preview + dots
+      setActiveDot(effectKey);
+      syncDockSizes();
 
-      // kick off auto-rotation (only once)
+      // auto-rotate (only once)
       startAutoRotate();
     };
 
     p.windowResized = () => {
       sizeCanvasToViewport(p);
-      ensureStacking();
       sharedPlaylist?.resize(p.width, p.height);
       currentEffect.resize?.(p);
       syncDockSizes();
@@ -171,6 +163,41 @@ function stopAutoRotate() {
 }
 
 /* =======================
+   Input helpers (mobile-safe)
+   ======================= */
+
+// Unified pointer/touch/mouse listeners
+function addUnifiedDown(el, handler, opts = {}) {
+  const h = (e) => { e.stopPropagation(); handler(e); };
+  if (window.PointerEvent) {
+    el.addEventListener('pointerdown', (e) => { if (!opts.passive) e.preventDefault(); h(e); }, { passive: !!opts.passive });
+  } else {
+    el.addEventListener('touchstart',  (e) => { if (!opts.passive) e.preventDefault(); h(e.changedTouches ? e.changedTouches[0] : e); }, { passive: !!opts.passive === false ? false : false });
+    el.addEventListener('mousedown',   (e) => { if (!opts.passive) e.preventDefault(); h(e); }, { passive: !!opts.passive });
+  }
+}
+function addUnifiedMove(el, handler, opts = {}) {
+  const h = (e) => { e.stopPropagation(); handler(e); };
+  if (window.PointerEvent) {
+    el.addEventListener('pointermove', (e) => { if (!opts.passive) e.preventDefault(); h(e); }, { passive: !!opts.passive === true ? true : false });
+  } else {
+    el.addEventListener('touchmove',   (e) => { if (!opts.passive) e.preventDefault(); h(e.changedTouches ? e.changedTouches[0] : e); }, { passive: !!opts.passive === true ? true : false });
+    el.addEventListener('mousemove',   (e) => { if (!opts.passive) e.preventDefault(); h(e); }, { passive: !!opts.passive });
+  }
+}
+function addUnifiedUp(el, handler, opts = {}) {
+  const h = (e) => { e.stopPropagation(); handler(e); };
+  if (window.PointerEvent) {
+    el.addEventListener('pointerup',     (e) => { if (!opts.passive) e.preventDefault(); h(e); }, { passive: !!opts.passive });
+    el.addEventListener('pointercancel', (e) => { if (!opts.passive) e.preventDefault(); h(e); }, { passive: !!opts.passive });
+  } else {
+    el.addEventListener('touchend',      (e) => { if (!opts.passive) e.preventDefault(); h(e.changedTouches ? e.changedTouches[0] : e); }, { passive: !!opts.passive });
+    el.addEventListener('touchcancel',   (e) => { if (!opts.passive) e.preventDefault(); h(e.changedTouches ? e.changedTouches[0] : e); }, { passive: !!opts.passive });
+    el.addEventListener('mouseup',       (e) => { if (!opts.passive) e.preventDefault(); h(e); }, { passive: !!opts.passive });
+  }
+}
+
+/* =======================
    Dock UI (joystick + preview + dots)
    ======================= */
 
@@ -187,9 +214,9 @@ function wireDock(joystickCallback) {
     flexDirection: 'column',
     alignItems: 'flex-end',
     gap: '10px',
-    zIndex: '500',        // under menu(1000) & nav(100000), above canvas(0)
-    pointerEvents: 'auto',// allow touches/clicks on iOS/Android
-    touchAction: 'none',  // better drag behavior, less scroll conflict
+    zIndex: '500',            // under menu(1000) & nav(100000), above canvas(0)
+    pointerEvents: 'auto',
+    touchAction: 'none',
     WebkitUserSelect: 'none',
     userSelect: 'none',
     WebkitTapHighlightColor: 'transparent',
@@ -222,7 +249,7 @@ function wireDock(joystickCallback) {
     pointerEvents: 'auto',
     boxSizing: 'border-box',
   });
-  preview.addEventListener('pointerdown', () => { userInteracted = true; stopAutoRotate(); }, { passive: true });
+  addUnifiedDown(preview, () => { userInteracted = true; stopAutoRotate(); }, { passive: true });
 
   const img = document.createElement('img');
   img.alt = '';
@@ -234,6 +261,7 @@ function wireDock(joystickCallback) {
     objectFit: 'cover',
     opacity: '0.88',
     filter: 'saturate(1.05) contrast(1.02)',
+    pointerEvents: 'none',
   });
   img.addEventListener('load', () => requestAnimationFrame(syncDockSizes));
   preview.appendChild(img);
@@ -253,6 +281,7 @@ function wireDock(joystickCallback) {
     border: '1px solid rgba(230,232,240,0.14)',
     pointerEvents: 'auto',
     boxSizing: 'border-box',
+    touchAction: 'manipulation',
   });
 
   const mkDot = (key, titleText) => {
@@ -270,18 +299,20 @@ function wireDock(joystickCallback) {
       cursor: 'pointer',
       transition: 'transform 160ms ease, background 160ms ease, border-color 160ms ease, opacity 160ms ease',
       opacity: '0.9',
-      touchAction: 'manipulation', // reduce 300ms delay on older mobile
+      touchAction: 'manipulation',
     });
 
-    // instant on mobile
-    d.addEventListener('pointerdown', () => {
+    // Mobile-safe: use unified "down" to avoid delayed clicks & make sure it fires
+    addUnifiedDown(d, (e) => {
       userInteracted = true;
       stopAutoRotate();
       switchEffect(key);
     }, { passive: true });
 
-    // click fallback (desktop)
-    d.addEventListener('click', () => {
+    // Desktop fallback click
+    d.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       userInteracted = true;
       stopAutoRotate();
       switchEffect(key);
@@ -292,12 +323,8 @@ function wireDock(joystickCallback) {
     return d;
   };
 
-  const add = (k) => bar.appendChild(mkDot(k, EFFECT_META[k]?.title || k));
-  add('ascii+drips');
-  add('video+threshold');
-  add('video+particles');
-  add('video+bezier');
-  add('video+mosaic');
+  ['ascii+drips','video+threshold','video+particles','video+bezier','video+mosaic']
+    .forEach(k => bar.appendChild(mkDot(k, EFFECT_META[k]?.title || k)));
 
   // Assemble
   dock.appendChild(preview);
@@ -333,7 +360,7 @@ function buildJoystick(onInput) {
     boxShadow: '0 2px 10px rgba(0,0,0,0.22)',
     overflow: 'hidden',
     pointerEvents: 'auto',
-    touchAction: 'none',
+    touchAction: 'none',          // critical for iOS to allow drag
     boxSizing: 'border-box',
     WebkitUserSelect: 'none',
     userSelect: 'none',
@@ -347,11 +374,13 @@ function buildJoystick(onInput) {
       position: 'absolute', left: 0, right: 0, top: '50%',
       height: '1px', background: 'rgba(230,232,240,0.15)',
       transform: 'translateY(-0.5px)',
+      pointerEvents: 'none',
     });
     else Object.assign(g.style, {
       position: 'absolute', top: 0, bottom: 0, left: '50%',
       width: '1px', background: 'rgba(230,232,240,0.15)',
       transform: 'translateX(-0.5px)',
+      pointerEvents: 'none',
     });
     wrapper.appendChild(g);
   });
@@ -402,7 +431,7 @@ function buildJoystick(onInput) {
     onInput?.({ x: nx, y: ny, mag, dir, active });
   }
 
-  function setKnobFromPointer(clientX, clientY) {
+  function setKnobFromClientXY(clientX, clientY) {
     const rect = wrapper.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
@@ -428,37 +457,41 @@ function buildJoystick(onInput) {
     emit(0, 0, false);
   }
 
-  function startDrag(clientX, clientY) {
+  // Drag handling (mobile-safe)
+  function onDown(e) {
+    // support both pointer & touch/mouse fallback
+    const cx = ('clientX' in e) ? e.clientX : (e.pageX || 0);
+    const cy = ('clientY' in e) ? e.clientY : (e.pageY || 0);
+    e.preventDefault();
+    e.stopPropagation();
     dragging = true;
     knob.style.cursor = 'grabbing';
-    setKnobFromPointer(clientX, clientY);
-    window.addEventListener('pointermove', onMove, { passive: false });
-    window.addEventListener('pointerup', onUp, { passive: true, once: true });
-    window.addEventListener('pointercancel', onUp, { passive: true, once: true });
-  }
+    setKnobFromClientXY(cx, cy);
 
-  function onDown(e) {
-    e.preventDefault();
-    startDrag(e.clientX, e.clientY);
+    addUnifiedMove(window, onMove, { passive: false });
+    addUnifiedUp(window, onUp, { passive: false });
   }
-
   function onMove(e) {
     if (!dragging) return;
+    const cx = ('clientX' in e) ? e.clientX : (e.pageX || 0);
+    const cy = ('clientY' in e) ? e.clientY : (e.pageY || 0);
     e.preventDefault();
-    setKnobFromPointer(e.clientX, e.clientY);
+    e.stopPropagation();
+    setKnobFromClientXY(cx, cy);
   }
-
-  function onUp() {
+  function onUp(e) {
     dragging = false;
     knob.style.cursor = 'grab';
     centerKnob();
+    // listeners added via addUnifiedMove/Up are passive-registered; they’ll be GC’d,
+    // but we still prefer to remove the pointermove (PointerEvent path handles once/cancel)
     window.removeEventListener('pointermove', onMove);
   }
 
-  // start drag from anywhere on the pad (mobile-friendly)
-  wrapper.addEventListener('pointerdown', onDown, { passive: false });
-  // keep knob listener as well (harmless)
-  knob.addEventListener('pointerdown', onDown, { passive: false });
+  // Start drag from the whole pad (much better on mobile)
+  addUnifiedDown(wrapper, onDown, { passive: false });
+  // Keep knob listener too (harmless)
+  addUnifiedDown(knob, onDown, { passive: false });
 
   return { wrapper, knob, centerKnob };
 }
