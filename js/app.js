@@ -41,6 +41,11 @@ const EFFECT_META = {
   'video+mosaic'    : { title: 'Video Mosaic Panels',         thumb: './images/effect_05.png' },
 };
 
+// simple mobile check (layout + UA hint)
+const isMobile = () =>
+  (window.innerWidth || document.documentElement.clientWidth) <= 800 ||
+  /Mobi|Android/i.test(navigator.userAgent);
+
 /* =======================
    Core app lifecycle
    ======================= */
@@ -94,17 +99,24 @@ function boot(effectKey = currentKey) {
       p.textAlign(p.CENTER, p.CENTER);
       setP(35);
 
+      // Ensure shared playlist exists & matches viewport
       if (!sharedPlaylist) {
-        const isMobile = p.windowWidth <= 800;
-        sharedPlaylist = new VideoPlaylist({ isMobile });
+        const mobile = isMobile();
+        sharedPlaylist = new VideoPlaylist({ isMobile: mobile });
         sharedPlaylist.init(p.width, p.height);
       } else {
         sharedPlaylist.resize(p.width, p.height);
       }
       setP(55);
 
-      if (currentEffect && !currentEffect.video) currentEffect.video = sharedPlaylist;
+      // 🔒 Force every effect to use the shared playlist
+      currentEffect.video = sharedPlaylist;
+
+      // Run effect setup
       currentEffect.setup?.(p);
+
+      // 🔒 And force it again in case setup created its own playlist
+      currentEffect.video = sharedPlaylist;
       setP(70);
 
       wireDock(onJoystickInput);   // build tiny source icons + joystick + preview + dots
@@ -122,12 +134,20 @@ function boot(effectKey = currentKey) {
       sharedPlaylist?.resize(p.width, p.height);
       currentEffect.resize?.(p);
       syncDockSizes();
+      // 🔒 Keep effect pinned to shared source on resize too
+      if (currentEffect) currentEffect.video = sharedPlaylist;
     };
 
     p.draw = () => {
       const now = p.millis();
       const dt = lastMs ? (now - lastMs) : 16.7;
       lastMs = now;
+
+      // 🔒 Safety pin each frame (cheap; protects against any late reassign)
+      if (currentEffect && currentEffect.video !== sharedPlaylist) {
+        currentEffect.video = sharedPlaylist;
+      }
+
       currentEffect.update?.(p, dt);
       currentEffect.draw?.(p);
 
@@ -207,7 +227,6 @@ function flash(el, text = '') {
     setTimeout(() => { tag.style.opacity = '0'; tag.style.transform = 'translateY(4px)'; setTimeout(() => tag.remove(), 160); }, 900);
   } catch {}
 }
-const isMobileUA = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 /* =======================
    VIDEO SOURCE SWITCHERS (no playlist.js changes needed)
@@ -218,15 +237,22 @@ let _webcamStream = null;
 
 async function useFileAsSource(file) {
   if (!file || !sharedPlaylist) return false;
-  if (!/^video\//i.test(file.type)) {
-    alert('Please choose a video file (mp4/webm/mov, etc).');
+
+  // accept Safari/iOS odd types too (e.g., video/quicktime) by trusting extension as well
+  const name = (file.name || '').toLowerCase();
+  const typeOK =
+    /^video\//i.test(file.type) ||
+    name.endsWith('.mp4') || name.endsWith('.mov') || name.endsWith('.webm') || name.endsWith('.m4v');
+
+  if (!typeOK) {
+    alert('Please choose a video file (mp4/webm/mov).');
     return false;
   }
 
   const url = URL.createObjectURL(file);
   const v = sharedPlaylist.createHiddenVideo(url);
   v.muted = true; v.playsInline = true; v.crossOrigin = 'anonymous';
-  v.loop = true; // ensure uploaded videos persist without ending
+  v.loop = true; v.autoplay = true; v.preload = 'metadata';
 
   return new Promise((resolve) => {
     const onReady = () => {
@@ -251,77 +277,34 @@ async function useFileAsSource(file) {
 
       resolve(true);
     };
-    v.addEventListener('loadeddata', onReady, { once: true });
+
+    // iOS can fire loadedmetadata first; listen to either
+    if (v.readyState >= 1) onReady();
+    else {
+      v.addEventListener('loadedmetadata', onReady, { once: true });
+      v.addEventListener('loadeddata', onReady, { once: true });
+    }
     v.load();
   });
 }
 
-// --- helper: try to pick a "front" camera deviceId (mobile) ---
-async function pickFrontCameraDeviceId() {
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const videos = devices.filter(d => d.kind === 'videoinput');
-    const frontish = videos.find(d => /front|user|face/i.test(d.label || ''));
-    if (frontish) return frontish.deviceId;
-    return videos[0]?.deviceId || null;
-  } catch {
-    return null;
-  }
-}
-
 async function useWebcamAsSource() {
   if (!sharedPlaylist) return false;
-
-  // Desktop: keep your current behavior (no change). Mobile: prefer front cam.
-  const mobileConstraints = {
-    audio: false,
-    video: {
-      facingMode: { ideal: 'user' }, // selfie/front camera
-      width: { ideal: 1280 },
-      height: { ideal: 720 }
-    }
-  };
-  const desktopConstraints = { audio: false, video: true };
-
-  // 1) Try simple approach first (keeps desktop unchanged)
   try {
-    const constraints = isMobileUA ? mobileConstraints : desktopConstraints;
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    return await attachStream(stream);
-  } catch (e1) {
-    console.warn('[webcam] initial getUserMedia failed:', e1);
-  }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: 'user',     // front-facing camera on mobile
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: false
+    });
 
-  // 2) Mobile fallback: explicit deviceId selection if facingMode ignored/failed
-  if (isMobileUA) {
-    try {
-      // tiny permissive call may help populate device labels on some iOS builds
-      try {
-        const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        tmp.getTracks().forEach(t => t.stop());
-      } catch {}
-      const deviceId = await pickFrontCameraDeviceId();
-      if (deviceId) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: { deviceId: { exact: deviceId } }
-        });
-        return await attachStream(stream);
-      }
-    } catch (e2) {
-      console.warn('[webcam] deviceId fallback failed:', e2);
-    }
-  }
-
-  alert('Could not start the camera. Check site permissions or try another browser.');
-  return false;
-
-  async function attachStream(stream) {
     const v = document.createElement('video');
     v.preload = 'auto';
-    v.loop = true;
+    v.loop = false;
     v.muted = true;
-    v.playsInline = true;   // critical for iOS inline playback
+    v.playsInline = true;
     v.autoplay = true;
     v.srcObject = stream;
 
@@ -355,8 +338,10 @@ async function useWebcamAsSource() {
     if (_webcamStream) { _webcamStream.getTracks().forEach(t => t.stop()); }
     _webcamStream = stream;
 
-    console.log('[webcam] active track:', stream.getVideoTracks()[0]?.label || '(no label)');
     return true;
+  } catch (err) {
+    console.warn('Webcam error:', err);
+    return false;
   }
 }
 
@@ -452,13 +437,18 @@ function wireDock(joystickCallback) {
   const camBtn    = icoBtn('🎥', 'Webcam (W)');
   const demoBtn   = icoBtn('◼︎',  'Demo playlist (D)');
 
-  const fileInput = mk('input', { display: 'none' });
+  const fileInput = mk('input', { position: 'absolute', left: '-9999px' });
   fileInput.type = 'file';
   fileInput.accept = 'video/*';
-  // Mobile hint: use front camera if the user captures from camera UI
-  if (isMobileUA) fileInput.setAttribute('capture', 'user');
+  // mobile hint → allow direct camera capture or pick from Photos
+  fileInput.setAttribute('capture', 'user');
 
-  uploadBtn.addEventListener('click', (e) => { e.preventDefault(); fileInput.click(); });
+  uploadBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    // on mobile, direct .click() is required (no synthetic MouseEvent)
+    fileInput.click();
+  });
+
   fileInput.addEventListener('change', async () => {
     const f = fileInput.files?.[0];
     if (!f) return;
@@ -468,13 +458,15 @@ function wireDock(joystickCallback) {
     else alert('Could not load that video. Try a different file.');
     fileInput.value = '';
   });
+
   camBtn.addEventListener('click', async (e) => {
     e.preventDefault();
     userInteracted = true; stopAutoRotate();
     const ok = await useWebcamAsSource();
-    if (ok) flash(tiny, isMobileUA ? 'Front Cam On' : 'Webcam On');
-    else alert('Webcam not available. Ensure HTTPS/localhost and allow camera.');
+    if (ok) flash(tiny, 'Webcam On');
+    else alert('Webcam not available. Use HTTPS/localhost and allow camera.');
   });
+
   demoBtn.addEventListener('click', (e) => {
     e.preventDefault();
     userInteracted = true; stopAutoRotate();
@@ -482,6 +474,7 @@ function wireDock(joystickCallback) {
     flash(tiny, 'Demo');
   });
 
+  // On mobile we still show Upload + Webcam + Demo
   tiny.appendChild(uploadBtn);
   tiny.appendChild(camBtn);
   tiny.appendChild(demoBtn);
@@ -600,14 +593,14 @@ function wireDock(joystickCallback) {
     if (e.repeat) return;
     const k = (e.key || '').toLowerCase();
     if (k === 'u') {
-      const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+      // programmatic click is fine on desktop; on iOS the user presses the button anyway
       const input = dock.querySelector('input[type=file]');
-      if (input) input.dispatchEvent(evt);
+      if (input) input.click();
     } else if (k === 'w') {
       userInteracted = true; stopAutoRotate();
       const ok = await useWebcamAsSource();
-      if (ok) flash(tiny, isMobileUA ? 'Front Cam On' : 'Webcam On');
-      else alert('Webcam not available. Ensure HTTPS/localhost and allow camera.');
+      if (ok) flash(tiny, 'Webcam On');
+      else alert('Webcam not available. Use HTTPS/localhost and allow camera.');
     } else if (k === 'd') {
       userInteracted = true; stopAutoRotate();
       restoreDemoPlaylist();

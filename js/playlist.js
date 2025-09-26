@@ -1,6 +1,7 @@
-// playlist.js — video playlist with cover-fit mask + user upload / webcam modes
-// - Supports: demo playlist (from CONFIG), file upload (mp4/webm/mov), webcam
-// - Fixes blob revoke race by delaying URL.revokeObjectURL until <video> is emptied
+// playlist.js — video playlist with cover-fit mask + stable vidEl for custom sources
+// - Demo playlist (from CONFIG) still preloads multiple <video>s
+// - Upload / Webcam now REUSE the SAME this.vidEl node (no reassignment), so
+//   effects that cached playlist.vidEl keep working.
 
 import { CONFIG } from './config.js';
 
@@ -12,7 +13,7 @@ export class VideoPlaylist {
     // Player state
     this.videoEls = [];
     this.activeIdx = 0;
-    this.vidEl = null;
+    this.vidEl = null;     // <- keep this DOM node stable during custom modes
     this.vidW = 1;
     this.vidH = 1;
     this.loaded = false;
@@ -71,12 +72,13 @@ export class VideoPlaylist {
     this.maskCanvas.height = height;
     if (!this.list || !this.list.length) return;
 
+    // create and start first demo video
     const first = this.createHiddenVideo(this.list[0]);
     this.videoEls[0] = first;
 
     const onFirstReady = () => {
       this.activeIdx = 0;
-      this.vidEl = first;
+      this.vidEl = first; // <- initial stable node (used for custom modes too)
       this.vidW = this.vidEl.videoWidth || 1;
       this.vidH = this.vidEl.videoHeight || 1;
       this.loaded = true;
@@ -85,7 +87,7 @@ export class VideoPlaylist {
       this.vidEl.play().catch(() => {});
       this.vidEl.addEventListener('ended', () => this.next());
 
-      // Preload remaining
+      // Preload remaining demo clips
       for (let i = 1; i < this.list.length; i++) {
         const v = this.createHiddenVideo(this.list[i]);
         this.videoEls[i] = v;
@@ -104,7 +106,6 @@ export class VideoPlaylist {
   }
 
   dispose() {
-    // Stop custom if active
     this._stopCustom();
 
     // Remove demo videos
@@ -128,7 +129,7 @@ export class VideoPlaylist {
 
     try { this.vidEl?.pause(); } catch {}
     this.activeIdx = (this.activeIdx + 1) % this.videoEls.length;
-    this.vidEl = this.videoEls[this.activeIdx];
+    this.vidEl = this.videoEls[this.activeIdx]; // (ok to reassign in playlist mode)
 
     if (this.vidEl.readyState < 1) {
       this.vidEl.addEventListener('loadeddata', () => {
@@ -145,10 +146,31 @@ export class VideoPlaylist {
     this.vidEl.play().catch(() => {});
   }
 
+  /* -------------------- helpers to reuse the SAME node -------------------- */
+
+  _ensureStableNode() {
+    // Prefer the current vidEl; otherwise use the first demo element; or create a fresh one.
+    if (this.vidEl && document.body.contains(this.vidEl)) return this.vidEl;
+
+    if (this.videoEls[0] && document.body.contains(this.videoEls[0])) {
+      this.vidEl = this.videoEls[0];
+      return this.vidEl;
+    }
+
+    // last resort: create a new hidden video (no sources yet)
+    this.vidEl = this.createHiddenVideo('');
+    return this.vidEl;
+  }
+
+  _pauseAllDemo() {
+    for (const v of this.videoEls) {
+      try { v.pause(); } catch {}
+    }
+  }
+
   /* -------------------- custom sources: upload / webcam -------------------- */
 
   async useVideoFile(file) {
-    // Accept MP4 or WebM (some browsers report weird types; trust extension too)
     const ext = (file.name || '').toLowerCase();
     const okType =
       file.type?.startsWith('video/') ||
@@ -157,16 +179,27 @@ export class VideoPlaylist {
     if (!okType) throw new Error('Unsupported file type');
 
     try {
-      // Clean any prior custom input (uses safe delayed revoke)
+      // stop any previous custom stream and pending blob URL
       this._stopCustom();
 
       const blobURL = URL.createObjectURL(file);
-      const v = this.createHiddenVideo(blobURL);
+
+      // Reuse the SAME DOM node
+      const v = this._ensureStableNode();
+      this._pauseAllDemo();
+
+      // IMPORTANT: reuse node & swap source
+      try { v.pause(); } catch {}
+      try { v.srcObject = null; } catch {}
+      try { v.removeAttribute('src'); } catch {}
+      while (v.firstChild) v.removeChild(v.firstChild); // remove any <source> children
+
       v.loop = true;
       v.muted = true;
       v.playsInline = true;
       v.autoplay = true;
       v.preload = 'metadata';
+      v.src = blobURL;
 
       await new Promise((resolve, reject) => {
         const onReady = () => resolve();
@@ -182,10 +215,12 @@ export class VideoPlaylist {
       this._mode = 'file';
       this._customURL = blobURL;
 
+      // Keep the SAME reference
       this.vidEl = v;
       this.vidW = v.videoWidth || 1;
       this.vidH = v.videoHeight || 1;
       this.loaded = true;
+      this.maskData = null;
 
       v.currentTime = 0;
       await v.play().catch(() => {});
@@ -206,12 +241,19 @@ export class VideoPlaylist {
         audio: false,
       });
 
-      const v = this.createHiddenVideo('');
+      // Reuse the SAME DOM node
+      const v = this._ensureStableNode();
+      this._pauseAllDemo();
+
+      try { v.pause(); } catch {}
+      try { v.removeAttribute('src'); } catch {}
+      while (v.firstChild) v.removeChild(v.firstChild);
+      v.srcObject = stream;
+
       v.loop = false;
       v.muted = true;
       v.playsInline = true;
       v.autoplay = true;
-      v.srcObject = stream;
 
       await new Promise((resolve, reject) => {
         const onReady = () => resolve();
@@ -227,10 +269,12 @@ export class VideoPlaylist {
       this._mode = 'webcam';
       this._customStream = stream;
 
+      // Keep the SAME reference
       this.vidEl = v;
       this.vidW = v.videoWidth || 1;
       this.vidH = v.videoHeight || 1;
       this.loaded = true;
+      this.maskData = null;
 
       await v.play().catch(() => {});
       return true;
@@ -243,23 +287,27 @@ export class VideoPlaylist {
 
   clearCustom() {
     this._stopCustom();
-    // Return to playlist mode, restart first video if available
+    // Return to playlist mode: resume current demo element if present
+    this._mode = 'playlist';
+
     if (this.videoEls.length) {
-      this._mode = 'playlist';
       this.activeIdx = Math.max(0, Math.min(this.activeIdx, this.videoEls.length - 1));
-      this.vidEl = this.videoEls[this.activeIdx] || this.videoEls[0];
-      if (this.vidEl) {
-        this.vidW = this.vidEl.videoWidth || 1;
-        this.vidH = this.vidEl.videoHeight || 1;
-        this.loaded = true;
-        try {
-          this.vidEl.currentTime = 0;
-          this.vidEl.play().catch(() => {});
-        } catch {}
-      }
+      const demo = this.videoEls[this.activeIdx] || this.videoEls[0];
+
+      // Make the stable node point back to the demo element for playlist mode
+      // (ok to change reference when going back to demo)
+      this.vidEl = demo;
+
+      this.vidW = this.vidEl.videoWidth || 1;
+      this.vidH = this.vidEl.videoHeight || 1;
+      this.loaded = true;
+      this.maskData = null;
+      try {
+        this.vidEl.currentTime = 0;
+        this.vidEl.play().catch(() => {});
+      } catch {}
     } else {
       // Nothing to show
-      this._mode = 'playlist';
       this.vidEl = null;
       this.loaded = false;
       this.maskData = null;
@@ -273,34 +321,11 @@ export class VideoPlaylist {
       this._customStream = null;
     }
 
-    // If current <video> belongs to custom mode (not in demo playlist), cleanly detach it
-    const isCustomVideo = this.vidEl && !this.videoEls.includes(this.vidEl);
-    const urlToRevoke = this._customURL;
-
-    if (isCustomVideo) {
-      try {
-        this.vidEl.pause?.();
-        this.vidEl.srcObject = null;
-        // Ensure the element is emptied so the UA stops touching the blob URL
-        this.vidEl.src = '';
-        this.vidEl.load();
-        const node = this.vidEl;
-
-        const revoke = () => {
-          if (urlToRevoke) { try { URL.revokeObjectURL(urlToRevoke); } catch {} }
-        };
-        node.addEventListener('emptied', revoke, { once: true });
-        setTimeout(revoke, 1500); // fallback revoke
-
-        if (node.parentNode) node.parentNode.removeChild(node);
-      } catch {}
-    } else {
-      // No custom element active, but we may still hold a blob URL
-      if (urlToRevoke) { try { URL.revokeObjectURL(urlToRevoke); } catch {} }
+    // Revoke blob URL if any (do NOT remove node — we now reuse it)
+    if (this._customURL) {
+      try { URL.revokeObjectURL(this._customURL); } catch {}
+      this._customURL = null;
     }
-
-    this._customURL = null;
-    // NOTE: don't null out this.vidEl here; caller sets it to playlist video (or null) next
   }
 
   /* -------------------- mask sampling / cover fit -------------------- */
@@ -316,7 +341,6 @@ export class VideoPlaylist {
     ctx.clearRect(0, 0, width, height);
     if (!this.loaded || !this.vidEl) { this.maskData = null; return null; }
 
-    // COVER FIT: scale video to fill canvas, crop overflow
     const baseScale = Math.max(width / this.vidW, height / this.vidH);
     const scale = baseScale * (typeof CONFIG.VIDEO.SIL_SCALE === 'number' ? CONFIG.VIDEO.SIL_SCALE : 1.0);
     const dw = this.vidW * scale;
