@@ -437,11 +437,11 @@ function wireDock(joystickCallback) {
   const camBtn    = icoBtn('🎥', 'Webcam (W)');
   const demoBtn   = icoBtn('◼︎',  'Demo playlist (D)');
 
-  const fileInput = mk('input', { position: 'absolute', left: '-9999px' });
-  fileInput.type = 'file';
-  fileInput.accept = 'video/*';
-  // mobile hint → allow direct camera capture or pick from Photos
-  fileInput.setAttribute('capture', 'user');
+const fileInput = mk('input', { position: 'absolute', left: '-9999px' });
+fileInput.type = 'file';
+fileInput.accept = 'video/*';  // iOS will now offer Photos / Files picker
+// no capture attribute so users can pick from Photos
+
 
   uploadBtn.addEventListener('click', (e) => {
     e.preventDefault();
