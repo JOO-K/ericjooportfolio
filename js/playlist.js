@@ -1,31 +1,45 @@
-// playlist.js — same as your working version, but video draws with "cover" fit (fills canvas)
+// playlist.js — video playlist with cover-fit mask + user upload / webcam modes
+// - Supports: demo playlist (from CONFIG), file upload (mp4/webm/mov), webcam
+// - Fixes blob revoke race by delaying URL.revokeObjectURL until <video> is emptied
 
 import { CONFIG } from './config.js';
 
 export class VideoPlaylist {
   constructor({ isMobile }) {
+    // Demo playlist (desktop vs mobile)
     this.list = isMobile ? CONFIG.VIDEO.MOBILE_PLAYLIST : CONFIG.VIDEO.DESKTOP_PLAYLIST;
+
+    // Player state
     this.videoEls = [];
     this.activeIdx = 0;
     this.vidEl = null;
-    this.vidW = 1; this.vidH = 1; this.loaded = false;
+    this.vidW = 1;
+    this.vidH = 1;
+    this.loaded = false;
 
-    // offscreen mask canvas
+    // Offscreen mask canvas
     this.maskCanvas = document.createElement('canvas');
     this.maskCtx = this.maskCanvas.getContext('2d', { willReadFrequently: true });
     this.maskCtx.imageSmoothingEnabled = false;
     this.maskData = null;
 
-    // throttle sampling
+    // Update throttling
     this.updateCounter = 0;
+
+    // Custom input state (upload / webcam)
+    this._mode = 'playlist';     // 'playlist' | 'file' | 'webcam'
+    this._customURL = null;      // blob: URL for uploaded file
+    this._customStream = null;   // MediaStream for webcam
   }
+
+  /* -------------------- lifecycle -------------------- */
 
   createHiddenVideo(sources) {
     const v = document.createElement('video');
     v.preload = 'auto';
     v.loop = false;
     v.muted = true;
-    v.playsInline = true; // iOS inline playback
+    v.playsInline = true;
     v.autoplay = false;
 
     if (Array.isArray(sources)) {
@@ -34,14 +48,19 @@ export class VideoPlaylist {
         s.src = src;
         v.appendChild(s);
       }
-    } else {
+    } else if (typeof sources === 'string' && sources.length) {
       v.src = sources;
     }
 
     Object.assign(v.style, {
-      position: 'fixed', left: '0px', top: '0px',
-      width: '1px', height: '1px', opacity: '0.01',
-      pointerEvents: 'none', zIndex: '-1'
+      position: 'fixed',
+      left: '0px',
+      top: '0px',
+      width: '1px',
+      height: '1px',
+      opacity: '0.01',
+      pointerEvents: 'none',
+      zIndex: '-1',
     });
     document.body.appendChild(v);
     return v;
@@ -50,8 +69,8 @@ export class VideoPlaylist {
   init(width, height) {
     this.maskCanvas.width = width;
     this.maskCanvas.height = height;
-
     if (!this.list || !this.list.length) return;
+
     const first = this.createHiddenVideo(this.list[0]);
     this.videoEls[0] = first;
 
@@ -63,7 +82,7 @@ export class VideoPlaylist {
       this.loaded = true;
 
       this.vidEl.currentTime = 0;
-      this.vidEl.play().catch(()=>{});
+      this.vidEl.play().catch(() => {});
       this.vidEl.addEventListener('ended', () => this.next());
 
       // Preload remaining
@@ -85,18 +104,29 @@ export class VideoPlaylist {
   }
 
   dispose() {
+    // Stop custom if active
+    this._stopCustom();
+
+    // Remove demo videos
     for (const v of this.videoEls) {
-      try { v.pause(); } catch(_) {}
-      try { document.body.removeChild(v); } catch(_) {}
+      try { v.pause(); } catch {}
+      try { v.srcObject = null; } catch {}
+      try { v.removeAttribute('src'); v.load(); } catch {}
+      try { document.body.removeChild(v); } catch {}
     }
     this.videoEls = [];
-    this.vidEl = null; this.loaded = false;
+    this.vidEl = null;
+    this.loaded = false;
     this.maskData = null;
   }
 
+  /* -------------------- demo playlist controls -------------------- */
+
   next() {
+    if (this._mode !== 'playlist') return; // ignore auto-next in custom modes
     if (!this.videoEls.length) return;
-    try { this.vidEl.pause(); } catch(_) {}
+
+    try { this.vidEl?.pause(); } catch {}
     this.activeIdx = (this.activeIdx + 1) % this.videoEls.length;
     this.vidEl = this.videoEls[this.activeIdx];
 
@@ -112,8 +142,168 @@ export class VideoPlaylist {
     this.maskData = null;
     this.loaded = true;
     this.vidEl.currentTime = 0;
-    this.vidEl.play().catch(()=>{});
+    this.vidEl.play().catch(() => {});
   }
+
+  /* -------------------- custom sources: upload / webcam -------------------- */
+
+  async useVideoFile(file) {
+    // Accept MP4 or WebM (some browsers report weird types; trust extension too)
+    const ext = (file.name || '').toLowerCase();
+    const okType =
+      file.type?.startsWith('video/') ||
+      ext.endsWith('.mp4') || ext.endsWith('.webm') || ext.endsWith('.mov') || ext.endsWith('.m4v');
+
+    if (!okType) throw new Error('Unsupported file type');
+
+    try {
+      // Clean any prior custom input (uses safe delayed revoke)
+      this._stopCustom();
+
+      const blobURL = URL.createObjectURL(file);
+      const v = this.createHiddenVideo(blobURL);
+      v.loop = true;
+      v.muted = true;
+      v.playsInline = true;
+      v.autoplay = true;
+      v.preload = 'metadata';
+
+      await new Promise((resolve, reject) => {
+        const onReady = () => resolve();
+        const onErr = (e) => reject(e);
+        if (v.readyState >= 2) onReady();
+        else {
+          v.addEventListener('loadeddata', onReady, { once: true });
+          v.addEventListener('error', onErr, { once: true });
+        }
+        v.load();
+      });
+
+      this._mode = 'file';
+      this._customURL = blobURL;
+
+      this.vidEl = v;
+      this.vidW = v.videoWidth || 1;
+      this.vidH = v.videoHeight || 1;
+      this.loaded = true;
+
+      v.currentTime = 0;
+      await v.play().catch(() => {});
+      return true;
+    } catch (e) {
+      console.warn('useVideoFile failed:', e);
+      this.clearCustom();
+      return false;
+    }
+  }
+
+  async useWebcam() {
+    try {
+      this._stopCustom();
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+
+      const v = this.createHiddenVideo('');
+      v.loop = false;
+      v.muted = true;
+      v.playsInline = true;
+      v.autoplay = true;
+      v.srcObject = stream;
+
+      await new Promise((resolve, reject) => {
+        const onReady = () => resolve();
+        const onErr = (e) => reject(e);
+        if (v.readyState >= 2) onReady();
+        else {
+          v.addEventListener('loadeddata', onReady, { once: true });
+          v.addEventListener('error', onErr, { once: true });
+        }
+        v.load();
+      });
+
+      this._mode = 'webcam';
+      this._customStream = stream;
+
+      this.vidEl = v;
+      this.vidW = v.videoWidth || 1;
+      this.vidH = v.videoHeight || 1;
+      this.loaded = true;
+
+      await v.play().catch(() => {});
+      return true;
+    } catch (e) {
+      console.warn('useWebcam failed:', e);
+      this.clearCustom();
+      return false;
+    }
+  }
+
+  clearCustom() {
+    this._stopCustom();
+    // Return to playlist mode, restart first video if available
+    if (this.videoEls.length) {
+      this._mode = 'playlist';
+      this.activeIdx = Math.max(0, Math.min(this.activeIdx, this.videoEls.length - 1));
+      this.vidEl = this.videoEls[this.activeIdx] || this.videoEls[0];
+      if (this.vidEl) {
+        this.vidW = this.vidEl.videoWidth || 1;
+        this.vidH = this.vidEl.videoHeight || 1;
+        this.loaded = true;
+        try {
+          this.vidEl.currentTime = 0;
+          this.vidEl.play().catch(() => {});
+        } catch {}
+      }
+    } else {
+      // Nothing to show
+      this._mode = 'playlist';
+      this.vidEl = null;
+      this.loaded = false;
+      this.maskData = null;
+    }
+  }
+
+  _stopCustom() {
+    // Stop webcam stream if any
+    if (this._customStream) {
+      try { this._customStream.getTracks().forEach(t => t.stop?.()); } catch {}
+      this._customStream = null;
+    }
+
+    // If current <video> belongs to custom mode (not in demo playlist), cleanly detach it
+    const isCustomVideo = this.vidEl && !this.videoEls.includes(this.vidEl);
+    const urlToRevoke = this._customURL;
+
+    if (isCustomVideo) {
+      try {
+        this.vidEl.pause?.();
+        this.vidEl.srcObject = null;
+        // Ensure the element is emptied so the UA stops touching the blob URL
+        this.vidEl.src = '';
+        this.vidEl.load();
+        const node = this.vidEl;
+
+        const revoke = () => {
+          if (urlToRevoke) { try { URL.revokeObjectURL(urlToRevoke); } catch {} }
+        };
+        node.addEventListener('emptied', revoke, { once: true });
+        setTimeout(revoke, 1500); // fallback revoke
+
+        if (node.parentNode) node.parentNode.removeChild(node);
+      } catch {}
+    } else {
+      // No custom element active, but we may still hold a blob URL
+      if (urlToRevoke) { try { URL.revokeObjectURL(urlToRevoke); } catch {} }
+    }
+
+    this._customURL = null;
+    // NOTE: don't null out this.vidEl here; caller sets it to playlist video (or null) next
+  }
+
+  /* -------------------- mask sampling / cover fit -------------------- */
 
   updateMask(width, height) {
     const doUpdate =
@@ -126,20 +316,16 @@ export class VideoPlaylist {
     ctx.clearRect(0, 0, width, height);
     if (!this.loaded || !this.vidEl) { this.maskData = null; return null; }
 
-    // ==== COVER FIT (fills canvas; crops if aspect ratios differ) ====
-    // base scale to fill the canvas in at least one dimension
+    // COVER FIT: scale video to fill canvas, crop overflow
     const baseScale = Math.max(width / this.vidW, height / this.vidH);
-    // keep your SIL_SCALE knob (e.g., 0.92 if you like it slightly “larger”)
     const scale = baseScale * (typeof CONFIG.VIDEO.SIL_SCALE === 'number' ? CONFIG.VIDEO.SIL_SCALE : 1.0);
-
     const dw = this.vidW * scale;
     const dh = this.vidH * scale;
-    const dx = (width  - dw) * 0.5;
+    const dx = (width - dw) * 0.5;
     const dy = (height - dh) * 0.5;
 
-    ctx.drawImage(this.vidEl, dx, dy, dw, dh);
-
     try {
+      ctx.drawImage(this.vidEl, dx, dy, dw, dh);
       this.maskData = ctx.getImageData(0, 0, width, height).data;
     } catch {
       this.maskData = null;

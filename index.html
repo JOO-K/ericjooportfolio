@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="./css/archivetoggle.css">
   <link rel="stylesheet" href="./css/hpslide.css">
 
-  <link rel="icon" type="image/png" href="./images/bluedot_favicon.png">
+  <link rel="icon" type="image/png" href="./images/greendot_favicon.png">
 
   <!-- Libs -->
   <script src="https://cdn.jsdelivr.net/npm/jquery@3.4.1/dist/jquery.min.js"></script>
@@ -32,7 +32,57 @@
   <link href="https://fonts.googleapis.com/css2?family=Yarndings+20&display=swap" rel="stylesheet">
 
   <!-- Part loader -->
-  <script src="./js/partLoader.js"></script>
+  <script src="./js/partLoader.js" data-root="./"></script>
+  <!-- Loader control helpers (accessible from app.js) -->
+ <script>
+    (function () {
+      // Create immediately so it's present even if app.js runs first
+      const el = document.createElement('div');
+      el.id = 'app-loader';
+      el.innerHTML = `
+        <div class="loader-label" id="loader-label">Loading… 0%</div>
+        <div class="loader-bar"><div class="loader-fill" id="loader-fill"></div></div>
+      `;
+      // Insert ASAP or on DOMContentLoaded, whichever happens first
+      const attach = () => {
+        if (!document.body) return false;
+        if (!document.getElementById('app-loader')) document.body.appendChild(el);
+        return true;
+      };
+      if (!attach()) {
+        document.addEventListener('DOMContentLoaded', attach, { once: true });
+      }
+
+      // Utilities
+      const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+      // Expose idempotent helpers on window
+      window.showLoader = function showLoader() {
+        const root = document.getElementById('app-loader');
+        if (!root) return;
+        root.classList.remove('hidden');
+      };
+
+      window.setLoaderProgress = function setLoaderProgress(pct) {
+        const root = document.getElementById('app-loader');
+        if (!root) return;
+        const prog = clamp(Math.round(pct ?? 0), 0, 100);
+        const fill = root.querySelector('#loader-fill');
+        const lab  = root.querySelector('#loader-label');
+        if (fill) fill.style.width = prog + '%';
+        if (lab)  lab.textContent = `Loading… ${prog}%`;
+      };
+
+      window.hideLoader = function hideLoader() {
+        const root = document.getElementById('app-loader');
+        if (!root) return;
+        // Always allow hiding, regardless of earlier "show" calls
+        root.classList.add('hidden');
+        // Remove after animation
+        setTimeout(() => root.remove(), 280);
+      };
+    })();
+  </script>
 </head>
 <body>
   <header id="navigation"></header>

@@ -1,4 +1,4 @@
-// navstatus.js — LA clock (12h with AM/PM + tenths) + OpenWeather (text only)
+// navstatus.js — LA clock (12h with AM/PM + tenths) + OpenWeather (temp only)
 (() => {
   // ===== CONFIG =====
   const CONTAINER_ID   = 'nav-status';
@@ -26,9 +26,17 @@
     whiteSpace: 'nowrap'
   });
 
+  const labelEl = document.createElement('span');
+  labelEl.textContent = 'LA';
+  Object.assign(labelEl.style, {
+    letterSpacing: '0.08em',
+    opacity: '0.9',
+    pointerEvents: 'none',
+    userSelect: 'none'
+  });
+
   const clockEl = document.createElement('span');
 
-  // separator that won't react to hover styles
   const sepEl = document.createElement('span');
   sepEl.textContent = '·';
   Object.assign(sepEl.style, {
@@ -42,7 +50,7 @@
   const weatherEl = document.createElement('span');
 
   // assemble (no icon!)
-  host.replaceChildren(clockEl, sepEl, weatherEl);
+  host.replaceChildren(labelEl, clockEl, sepEl, weatherEl);
 
   // ===== CLOCK: 12h + AM/PM + tenths =====
   const dtf = new Intl.DateTimeFormat('en-US', {
@@ -60,60 +68,39 @@
   renderClock();
   const clockTimer = setInterval(renderClock, 100);
 
-  // after you create `clockEl`, add:
-const labelEl = document.createElement('span');
-labelEl.textContent = 'LA';
-Object.assign(labelEl.style, {
-  letterSpacing: '0.08em',
-  opacity: '0.9',
-  pointerEvents: 'none',
-  userSelect: 'none'
-});
-
-// ...and change the assembly line from:
-host.replaceChildren(clockEl, sepEl, weatherEl);
-
-// ...to:
-host.replaceChildren(labelEl, clockEl, sepEl, weatherEl);
-
-  // ===== WEATHER (text only) =====
+  // ===== WEATHER (temp only) =====
   const unitsSuffix = UNITS === 'metric' ? 'C' : UNITS === 'imperial' ? 'F' : 'K';
-async function fetchWeather() {
-  try {
-    if (!WEATHER_KEY || WEATHER_KEY === 'YOUR_OPENWEATHER_KEY') {
-      weatherEl.textContent = 'set OPENWEATHER key';
-      return;
+
+  async function fetchWeather() {
+    try {
+      if (!WEATHER_KEY || WEATHER_KEY === 'YOUR_OPENWEATHER_KEY') {
+        weatherEl.textContent = 'set OPENWEATHER key';
+        return;
+      }
+
+      const url = new URL('https://api.openweathermap.org/data/2.5/weather');
+      if (USE_LATLON) {
+        url.searchParams.set('lat', String(LAT));
+        url.searchParams.set('lon', String(LON));
+      } else {
+        url.searchParams.set('q', QUERY_FALLBACK);
+      }
+      url.searchParams.set('units', UNITS);
+      url.searchParams.set('appid', WEATHER_KEY);
+
+      weatherEl.textContent = '…';
+      const res = await fetch(url.toString(), { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      const temp = Math.round(data.main?.temp);
+      // only temperature
+      weatherEl.textContent = `${temp}°${unitsSuffix}`;
+    } catch (err) {
+      console.warn('[navstatus] weather error:', err);
+      weatherEl.textContent = '—';
     }
-
-    const url = new URL('https://api.openweathermap.org/data/2.5/weather');
-    if (USE_LATLON) {
-      url.searchParams.set('lat', String(LAT));
-      url.searchParams.set('lon', String(LON));
-    } else {
-      url.searchParams.set('q', QUERY_FALLBACK);
-    }
-    url.searchParams.set('units', UNITS);
-    url.searchParams.set('appid', WEATHER_KEY);
-
-    weatherEl.textContent = '…';
-    const res = await fetch(url.toString(), { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-
-    const wx   = (data.weather && data.weather[0]) || {};
-    const temp = Math.round(data.main?.temp);
-
-    // ↓↓↓ filter out the word "clear" from the description ↓↓↓
-    let desc = (wx.main || wx.description || '').toLowerCase();
-    desc = desc.replace(/\bclear\b/gi, '').trim();
-
-    weatherEl.textContent = `${temp}°${unitsSuffix}${desc ? ' ' + desc : ''}`;
-  } catch (err) {
-    console.warn('[navstatus] weather error:', err);
-    weatherEl.textContent = '—';
   }
-}
-
 
   fetchWeather();
   const weatherTimer = setInterval(fetchWeather, REFRESH_MS);

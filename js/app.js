@@ -1,5 +1,6 @@
-// app.js — viewport-locked canvas, storm joystick, preview, 5-dot dock
+// app.js — viewport-locked canvas, loader, dock (tiny source icons + joystick + preview + dots)
 // + auto-shuffle every 8s until user interacts
+
 import { AsciiSilhouetteEffect } from './ascii.js';
 import VideoThresholdEffect from './videothreshold.js';
 import VideoConnectedParticlesEffect from './videoparticles.js';
@@ -17,6 +18,11 @@ let currentKey = 'video+threshold';
 let autoRotateTimer = null;
 let userInteracted = false;
 const ROTATE_MS = 8000;
+
+// --- loader helpers (from index.html) ---
+const show = (...a) => window.showLoader?.(...a);
+const setP  = (...a) => window.setLoaderProgress?.(...a);
+const hide = (...a) => window.hideLoader?.(...a);
 
 const EFFECTS = {
   'ascii+drips'     : (opts) => new AsciiSilhouetteEffect(opts),
@@ -62,6 +68,8 @@ function sizeCanvasToViewport(p) {
 }
 
 function boot(effectKey = currentKey) {
+  show(); setP(5);
+
   currentKey = effectKey;
   // FALLBACK TO VIDEO THRESHOLD
   const make = EFFECTS[effectKey] || EFFECTS['video+threshold'];
@@ -70,8 +78,12 @@ function boot(effectKey = currentKey) {
   // eslint-disable-next-line no-undef
   p5Instance = new p5((p) => {
     let lastMs = 0;
+    let firstFrameDone = false;
 
-    p.preload = () => currentEffect.preload?.(p);
+    p.preload = () => {
+      setP(20);
+      currentEffect.preload?.(p);
+    };
 
     p.setup = () => {
       lockViewportNoScroll();
@@ -80,7 +92,9 @@ function boot(effectKey = currentKey) {
       p.createCanvas(1, 1);
       sizeCanvasToViewport(p);
       p.textAlign(p.CENTER, p.CENTER);
+      setP(35);
 
+      // Ensure shared playlist exists & matches viewport
       if (!sharedPlaylist) {
         const isMobile = p.windowWidth <= 800;
         sharedPlaylist = new VideoPlaylist({ isMobile });
@@ -88,16 +102,26 @@ function boot(effectKey = currentKey) {
       } else {
         sharedPlaylist.resize(p.width, p.height);
       }
+      setP(55);
 
-      if (currentEffect && !currentEffect.video) currentEffect.video = sharedPlaylist;
+      // 🔒 Force every effect to use the shared playlist
+      currentEffect.video = sharedPlaylist;
+
+      // Run effect setup
       currentEffect.setup?.(p);
 
-      wireDock(onJoystickInput);   // build joystick + preview + dots; subscribe to joystick
-      setActiveDot(effectKey);     // highlight dot + set preview
-      syncDockSizes();             // match widths exactly
+      // 🔒 And force it again in case setup created its own playlist
+      currentEffect.video = sharedPlaylist;
+      setP(70);
+
+      wireDock(onJoystickInput);   // build tiny source icons + joystick + preview + dots
+      setActiveDot(effectKey);
+      syncDockSizes();
+      setP(85);
 
       // kick off auto-rotation (only once)
       startAutoRotate();
+      setP(90);
     };
 
     p.windowResized = () => {
@@ -105,14 +129,28 @@ function boot(effectKey = currentKey) {
       sharedPlaylist?.resize(p.width, p.height);
       currentEffect.resize?.(p);
       syncDockSizes();
+      // 🔒 Keep effect pinned to shared source on resize too
+      if (currentEffect) currentEffect.video = sharedPlaylist;
     };
 
     p.draw = () => {
       const now = p.millis();
       const dt = lastMs ? (now - lastMs) : 16.7;
       lastMs = now;
+
+      // 🔒 Safety pin each frame (cheap; protects against any late reassign)
+      if (currentEffect && currentEffect.video !== sharedPlaylist) {
+        currentEffect.video = sharedPlaylist;
+      }
+
       currentEffect.update?.(p, dt);
       currentEffect.draw?.(p);
+
+      if (!firstFrameDone) {
+        firstFrameDone = true;
+        setP(100);
+        setTimeout(() => hide(), 180);
+      }
     };
   });
 }
@@ -120,11 +158,9 @@ function boot(effectKey = currentKey) {
 function switchEffect(key) {
   if (!EFFECTS[key]) return;
 
-  if (currentEffect && typeof currentEffect.dispose === 'function') {
-    if (currentEffect._ownsVideo) currentEffect.dispose();
-    else currentEffect.dispose({ keepVideo: true });
-  }
-
+  // IMPORTANT: do NOT call currentEffect.dispose() here.
+  // Some effects dispose the shared VideoPlaylist, which resets the source.
+  // Tearing down the p5 instance is sufficient.
   if (p5Instance) {
     p5Instance.remove();
     p5Instance = null;
@@ -166,17 +202,157 @@ function stopAutoRotate() {
 }
 
 /* =======================
-   Dock UI (joystick + preview + dots)
+   Tiny helpers
+   ======================= */
+function mk(el, style = {}) { const e = document.createElement(el); Object.assign(e.style, style); return e; }
+function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+function flash(el, text = '') {
+  try {
+    const tag = mk('div', {
+      position: 'absolute', right: '0', bottom: '100%', marginBottom: '6px',
+      padding: '6px 8px', borderRadius: '8px', fontSize: '11px',
+      background: 'rgba(230,232,240,0.9)', color: '#0e111a',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.25)', opacity: '0',
+      transform: 'translateY(4px)', transition: 'all 160ms ease', pointerEvents: 'none',
+    });
+    tag.textContent = text;
+    el.style.position = 'relative';
+    el.appendChild(tag);
+    requestAnimationFrame(() => { tag.style.opacity = '1'; tag.style.transform = 'translateY(0)'; });
+    setTimeout(() => { tag.style.opacity = '0'; tag.style.transform = 'translateY(4px)'; setTimeout(() => tag.remove(), 160); }, 900);
+  } catch {}
+}
+
+/* =======================
+   VIDEO SOURCE SWITCHERS (no playlist.js changes needed)
+   ======================= */
+
+let _customBlobURL = null;
+let _webcamStream = null;
+
+async function useFileAsSource(file) {
+  if (!file || !sharedPlaylist) return false;
+  if (!/^video\//i.test(file.type)) {
+    alert('Please choose a video file (mp4/webm/mov, etc).');
+    return false;
+  }
+
+  const url = URL.createObjectURL(file);
+  const v = sharedPlaylist.createHiddenVideo(url);
+  v.muted = true; v.playsInline = true; v.crossOrigin = 'anonymous';
+  v.loop = true;
+
+  return new Promise((resolve) => {
+    const onReady = () => {
+      try { sharedPlaylist.vidEl?.pause?.(); } catch {}
+      sharedPlaylist.videoEls = [v];
+      sharedPlaylist.activeIdx = 0;
+      sharedPlaylist.vidEl = v;
+      sharedPlaylist.vidW = v.videoWidth || 1;
+      sharedPlaylist.vidH = v.videoHeight || 1;
+      sharedPlaylist.loaded = true;
+      sharedPlaylist.maskData = null;
+
+      v.currentTime = 0;
+      v.play().catch(()=>{});
+
+      if (_customBlobURL && _customBlobURL !== url) {
+        setTimeout(() => { try { URL.revokeObjectURL(_customBlobURL); } catch {} }, 500);
+      }
+      _customBlobURL = url;
+
+      if (_webcamStream) { _webcamStream.getTracks().forEach(t => t.stop()); _webcamStream = null; }
+
+      resolve(true);
+    };
+    v.addEventListener('loadeddata', onReady, { once: true });
+    v.load();
+  });
+}
+
+async function useWebcamAsSource() {
+  if (!sharedPlaylist) return false;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+    const v = document.createElement('video');
+    v.preload = 'auto';
+    v.loop = true;
+    v.muted = true;
+    v.playsInline = true;
+    v.autoplay = true;
+    v.srcObject = stream;
+
+    Object.assign(v.style, {
+      position: 'fixed', left: '0px', top: '0px',
+      width: '1px', height: '1px', opacity: '0.01',
+      pointerEvents: 'none', zIndex: '-1'
+    });
+    document.body.appendChild(v);
+
+    await v.play().catch(()=>{});
+
+    await new Promise(res => {
+      if (v.readyState >= 1) res();
+      else v.addEventListener('loadedmetadata', () => res(), { once: true });
+    });
+
+    try { sharedPlaylist.vidEl?.pause?.(); } catch {}
+    sharedPlaylist.videoEls = [v];
+    sharedPlaylist.activeIdx = 0;
+    sharedPlaylist.vidEl = v;
+    sharedPlaylist.vidW = v.videoWidth || 1;
+    sharedPlaylist.vidH = v.videoHeight || 1;
+    sharedPlaylist.loaded = true;
+    sharedPlaylist.maskData = null;
+
+    if (_customBlobURL) {
+      setTimeout(() => { try { URL.revokeObjectURL(_customBlobURL); } catch {} }, 500);
+      _customBlobURL = null;
+    }
+    if (_webcamStream) { _webcamStream.getTracks().forEach(t => t.stop()); }
+    _webcamStream = stream;
+
+    return true;
+  } catch (err) {
+    console.warn('Webcam error:', err);
+    return false;
+  }
+}
+
+function restoreDemoPlaylist() {
+  if (!sharedPlaylist) return;
+
+  if (_webcamStream) { _webcamStream.getTracks().forEach(t => t.stop()); _webcamStream = null; }
+
+  if (_customBlobURL) {
+    setTimeout(() => { try { URL.revokeObjectURL(_customBlobURL); } catch {} }, 500);
+    _customBlobURL = null;
+  }
+
+  const first = sharedPlaylist.videoEls?.[0];
+  if (first && first.srcObject) {
+    try { first.pause(); } catch {}
+    try { document.body.removeChild(first); } catch {}
+  }
+
+  const w = p5Instance?.width || window.innerWidth;
+  const h = p5Instance?.height || window.innerHeight;
+  sharedPlaylist.dispose();
+  sharedPlaylist = new VideoPlaylist({ isMobile: window.innerWidth <= 800 });
+  sharedPlaylist.init(w, h);
+
+  if (currentEffect) currentEffect.video = sharedPlaylist;
+}
+
+/* =======================
+   Dock UI
    ======================= */
 
 function wireDock(joystickCallback) {
-  // Remove any previous dock to avoid double overlays after hot reloads/partial loads
   const old = document.getElementById('fx-dock');
   if (old) old.remove();
 
-  const dock = document.createElement('div');
-  dock.id = 'fx-dock';
-  Object.assign(dock.style, {
+  const dock = mk('div', {
     position: 'fixed',
     right: '18px',
     bottom: '16px',
@@ -184,26 +360,92 @@ function wireDock(joystickCallback) {
     flexDirection: 'column',
     alignItems: 'flex-end',
     gap: '10px',
-    // Make it unquestionably clickable on mobile:
-    zIndex: '99990',              // below nav (100000), above anything else
+    zIndex: '99990',
     pointerEvents: 'auto',
     touchAction: 'none',
     WebkitUserSelect: 'none',
     userSelect: 'none',
     WebkitTapHighlightColor: 'transparent',
+    boxSizing: 'border-box',
   });
+  dock.id = 'fx-dock';
 
-  // Hard-block any ancestor pointer-events weirdness:
-  dock.setAttribute('data-hitfix', '1');
-  dock.style.pointerEvents = 'auto';
-  // ensure children are active too
   const forcePE = document.createElement('style');
-  forcePE.textContent = `
-    #fx-dock, #fx-dock * { pointer-events: auto !important; touch-action: manipulation; }
-  `;
+  forcePE.textContent = `#fx-dock, #fx-dock * { pointer-events: auto !important; touch-action: manipulation; }`;
   document.head.appendChild(forcePE);
 
-  // JOYSTICK
+  // ---- TINY SOURCE ICONS (subtle) ----
+  const tiny = mk('div', {
+    display: 'flex',
+    gap: '6px',
+    alignItems: 'center',
+    padding: '4px 6px',
+    background: 'rgba(14,17,26,0.40)',
+    border: '1px solid rgba(230,232,240,0.14)',
+    borderRadius: '10px',
+    opacity: '0.78',
+    transition: 'opacity 140ms ease',
+  });
+  tiny.addEventListener('mouseenter', () => (tiny.style.opacity = '1'));
+  tiny.addEventListener('mouseleave', () => (tiny.style.opacity = '0.78'));
+
+  const icoBtn = (label, title) => {
+    const b = mk('button', {
+      width: '26px', height: '26px', borderRadius: '8px',
+      border: '1px solid rgba(230,232,240,0.55)',
+      background: 'rgba(230,232,240,0.08)', color: '#e6e8f0',
+      fontSize: '13px', lineHeight: '26px',
+      cursor: 'pointer', padding: '0',
+      transition: 'transform 120ms ease, background 120ms ease, border-color 120ms ease',
+    });
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('mouseenter', () => (b.style.background = 'rgba(230,232,240,0.15)'));
+    b.addEventListener('mouseleave', () => (b.style.background = 'rgba(230,232,240,0.08)'));
+    b.addEventListener('mousedown', () => (b.style.transform = 'scale(0.95)'));
+    b.addEventListener('mouseup',   () => (b.style.transform = 'scale(1)'));
+    return b;
+  };
+
+  const uploadBtn = icoBtn('📤', 'Upload video (U)');
+  const camBtn    = icoBtn('🎥', 'Webcam (W)');
+  const demoBtn   = icoBtn('◼︎',  'Demo playlist (D)');
+
+  const fileInput = mk('input', { display: 'none' });
+  fileInput.type = 'file';
+  fileInput.accept = 'video/*';
+
+  uploadBtn.addEventListener('click', (e) => { e.preventDefault(); fileInput.click(); });
+  fileInput.addEventListener('change', async () => {
+    const f = fileInput.files?.[0];
+    if (!f) return;
+    userInteracted = true; stopAutoRotate();
+    const ok = await useFileAsSource(f);
+    if (ok) flash(tiny, 'Uploaded');
+    else alert('Could not load that video. Try a different file.');
+    fileInput.value = '';
+  });
+  camBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    userInteracted = true; stopAutoRotate();
+    const ok = await useWebcamAsSource();
+    if (ok) flash(tiny, 'Webcam On');
+    else alert('Webcam not available. Use HTTPS/localhost and allow camera.');
+  });
+  demoBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    userInteracted = true; stopAutoRotate();
+    restoreDemoPlaylist();
+    flash(tiny, 'Demo');
+  });
+
+  tiny.appendChild(uploadBtn);
+  tiny.appendChild(camBtn);
+  tiny.appendChild(demoBtn);
+  tiny.appendChild(fileInput);
+  dock.appendChild(tiny);
+
+  // ---- JOYSTICK ----
   const joy = buildJoystick((payload) => {
     if (payload?.active || payload?.mag > 0.12) {
       userInteracted = true;
@@ -214,12 +456,10 @@ function wireDock(joystickCallback) {
   joy.wrapper.style.boxSizing = 'border-box';
   dock.appendChild(joy.wrapper);
 
-  // PREVIEW (thumbnail box)
-  const preview = document.createElement('div');
-  preview.id = 'fx-preview';
-  Object.assign(preview.style, {
+  // ---- PREVIEW (thumbnail box) ----
+  const preview = mk('div', {
     position: 'relative',
-    width: '240px',   // placeholder; syncDockSizes will override
+    width: '240px',
     height: '120px',
     borderRadius: '16px',
     overflow: 'hidden',
@@ -230,14 +470,12 @@ function wireDock(joystickCallback) {
     pointerEvents: 'auto',
     boxSizing: 'border-box',
   });
-  // tap on preview counts as interaction (stops shuffle)
+  preview.id = 'fx-preview';
   preview.addEventListener('pointerdown', () => { userInteracted = true; stopAutoRotate(); }, { passive: true });
   preview.addEventListener('touchstart',  () => { userInteracted = true; stopAutoRotate(); }, { passive: true });
   preview.addEventListener('click',       () => { userInteracted = true; stopAutoRotate(); });
 
-  const img = document.createElement('img');
-  img.alt = '';
-  Object.assign(img.style, {
+  const img = mk('img', {
     position: 'absolute',
     inset: '0',
     width: '100%',
@@ -245,15 +483,14 @@ function wireDock(joystickCallback) {
     objectFit: 'cover',
     opacity: '0.88',
     filter: 'saturate(1.05) contrast(1.02)',
-    pointerEvents: 'none', // the image itself shouldn’t steal events
+    pointerEvents: 'none',
   });
+  img.alt = '';
   img.addEventListener('load', () => requestAnimationFrame(syncDockSizes));
   preview.appendChild(img);
 
-  // DOTS — VIDEO THRESHOLD FIRST
-  const bar = document.createElement('div');
-  bar.id = 'fx-dots';
-  Object.assign(bar.style, {
+  // ---- DOTS — VIDEO THRESHOLD FIRST ----
+  const bar = mk('div', {
     position: 'relative',
     display: 'flex',
     gap: '10px',
@@ -267,36 +504,26 @@ function wireDock(joystickCallback) {
     boxSizing: 'border-box',
     touchAction: 'manipulation',
   });
+  bar.id = 'fx-dots';
 
   const mkDot = (key, titleText) => {
-    const d = document.createElement('button');
+    const d = mk('button', {
+      width: '14px', height: '14px', borderRadius: '50%',
+      border: '1px solid rgba(230,232,240,0.65)',
+      background: 'transparent', padding: '0',
+      cursor: 'pointer',
+      transition: 'transform 160ms ease, background 160ms ease, border-color 160ms ease, opacity 160ms ease',
+      opacity: '0.95', touchAction: 'manipulation',
+    });
     d.setAttribute('data-key', key);
     d.title = titleText;
     d.setAttribute('aria-label', titleText);
-    Object.assign(d.style, {
-      width: '14px',
-      height: '14px',
-      borderRadius: '50%',
-      border: '1px solid rgba(230,232,240,0.65)',
-      background: 'transparent',
-      padding: '0',
-      cursor: 'pointer',
-      transition: 'transform 160ms ease, background 160ms ease, border-color 160ms ease, opacity 160ms ease',
-      opacity: '0.95',
-      touchAction: 'manipulation',
-    });
 
-    const trigger = () => {
-      userInteracted = true;
-      stopAutoRotate();
-      switchEffect(key);
-    };
+    const trigger = () => { userInteracted = true; stopAutoRotate(); switchEffect(key); };
 
-    // Mobile-first: pointerdown + touchend (some browsers suppress click)
     d.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); trigger(); }, { passive: false });
     d.addEventListener('touchstart',  (e) => { e.preventDefault(); e.stopPropagation(); }, { passive: false });
     d.addEventListener('touchend',    (e) => { e.preventDefault(); e.stopPropagation(); trigger(); }, { passive: false });
-    // Desktop fallback
     d.addEventListener('click',       (e) => { e.preventDefault(); e.stopPropagation(); trigger(); });
 
     d.addEventListener('mouseenter', () => (d.style.opacity = '1'));
@@ -304,13 +531,12 @@ function wireDock(joystickCallback) {
     return d;
   };
 
-  const add = (k) => bar.appendChild(mkDot(k, EFFECT_META[k]?.title || k));
-  // ORDER CHANGED: video+threshold first, then ascii
-  add('video+threshold');
-  add('ascii+drips');
-  add('video+particles');
-  add('video+bezier');
-  add('video+mosaic');
+  const addDot = (k) => bar.appendChild(mkDot(k, EFFECT_META[k]?.title || k));
+  addDot('video+threshold');
+  addDot('ascii+drips');
+  addDot('video+particles');
+  addDot('video+bezier');
+  addDot('video+mosaic');
 
   // Assemble
   dock.appendChild(preview);
@@ -325,6 +551,27 @@ function wireDock(joystickCallback) {
 
   // Init preview image
   updatePreview(currentKey);
+
+  // ---- keyboard shortcuts: U/W/D ----
+  const onKey = async (e) => {
+    if (e.repeat) return;
+    const k = (e.key || '').toLowerCase();
+    if (k === 'u') {
+      const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+      const input = dock.querySelector('input[type=file]');
+      if (input) input.dispatchEvent(evt);
+    } else if (k === 'w') {
+      userInteracted = true; stopAutoRotate();
+      const ok = await useWebcamAsSource();
+      if (ok) flash(tiny, 'Webcam On');
+      else alert('Webcam not available. Use HTTPS/localhost and allow camera.');
+    } else if (k === 'd') {
+      userInteracted = true; stopAutoRotate();
+      restoreDemoPlaylist();
+      flash(tiny, 'Demo');
+    }
+  };
+  window.addEventListener('keydown', onKey);
 
   // ---- Tap hit-test logger (helps diagnose overlays) ----
   const logTap = (x, y, label) => {
@@ -347,9 +594,7 @@ function buildJoystick(onInput) {
   const KNOB = 24;        // diameter
   const BORDER = 1;
 
-  const wrapper = document.createElement('div');
-  wrapper.id = 'fx-joystick';
-  Object.assign(wrapper.style, {
+  const wrapper = mk('div', {
     position: 'relative',
     width: WRAP_SIZE + 'px',
     height: WRAP_SIZE + 'px',
@@ -366,28 +611,18 @@ function buildJoystick(onInput) {
     userSelect: 'none',
     WebkitTapHighlightColor: 'transparent',
   });
+  wrapper.id = 'fx-joystick';
 
   // Crosshair
   ['H','V'].forEach(axis => {
-    const g = document.createElement('div');
-    if (axis === 'H') Object.assign(g.style, {
-      position: 'absolute', left: 0, right: 0, top: '50%',
-      height: '1px', background: 'rgba(230,232,240,0.15)',
-      transform: 'translateY(-0.5px)',
-      pointerEvents: 'none',
-    });
-    else Object.assign(g.style, {
-      position: 'absolute', top: 0, bottom: 0, left: '50%',
-      width: '1px', background: 'rgba(230,232,240,0.15)',
-      transform: 'translateX(-0.5px)',
-      pointerEvents: 'none',
-    });
+    const g = mk('div', { position: 'absolute', pointerEvents: 'none', background: 'rgba(230,232,240,0.15)' });
+    if (axis === 'H') Object.assign(g.style, { left: 0, right: 0, top: '50%', height: '1px', transform: 'translateY(-0.5px)' });
+    else              Object.assign(g.style, { top: 0, bottom: 0, left: '50%', width: '1px', transform: 'translateX(-0.5px)' });
     wrapper.appendChild(g);
   });
 
   // Knob (centered default)
-  const knob = document.createElement('div');
-  Object.assign(knob.style, {
+  const knob = mk('div', {
     position: 'absolute',
     width: KNOB + 'px',
     height: KNOB + 'px',
@@ -395,14 +630,9 @@ function buildJoystick(onInput) {
     background: 'rgba(230,232,240,0.9)',
     border: '1px solid rgba(230,232,240,0.7)',
     boxShadow: '0 2px 8px rgba(0,0,0,0.25), inset 0 0 6px rgba(255,255,255,0.35)',
-    left: '50%',
-    top: '50%',
-    transform: 'translate(-50%, -50%)',
-    transition: 'transform 180ms ease',
-    willChange: 'transform',
-    cursor: 'grab',
-    touchAction: 'none',
-    zIndex: '1',
+    left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+    transition: 'transform 180ms ease', willChange: 'transform',
+    cursor: 'grab', touchAction: 'none', zIndex: '1',
   });
   wrapper.appendChild(knob);
 
@@ -491,10 +721,8 @@ function buildJoystick(onInput) {
     window.removeEventListener('touchmove', onMove);
   }
 
-  // start drag from anywhere on the pad (mobile-friendly)
   wrapper.addEventListener('pointerdown', onDown, { passive: false });
   wrapper.addEventListener('touchstart',  onDown, { passive: false });
-  // keep knob listeners
   knob.addEventListener('pointerdown', onDown, { passive: false });
   knob.addEventListener('touchstart',  onDown, { passive: false });
 
@@ -564,11 +792,6 @@ function updatePreview(key) {
     }
   }
 }
-
-/* =======================
-   Utilities
-   ======================= */
-function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
 /* =======================
    Start

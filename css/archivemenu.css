@@ -13,14 +13,18 @@ a {
 #archivemenu {
   position: fixed;
   inset: 0;
-  z-index: 1000;              /* above page content, below tiles overlay */
+  z-index: 1000;
+  /* above page content, below tiles overlay */
   overflow-y: auto;
-  background: #171717;        /* dark graay */
-  display: block;             /* never toggle this in JS */
+  background: #171717;
+  /* dark graay */
+  display: block;
+  /* never toggle this in JS */
   visibility: hidden;
   opacity: 0;
   transition: opacity 140ms linear, visibility 0s linear 140ms;
 }
+
 #archivemenu.is-visible {
   visibility: visible;
   opacity: 1;
@@ -35,7 +39,8 @@ a {
   min-height: 100%;
   box-sizing: border-box;
   background-color: #171717;
-  animation: none !important;     /* kill any @keyframes archiveload */
+  animation: none !important;
+  /* kill any @keyframes archiveload */
   transform: none !important;
   opacity: 1 !important;
 }
@@ -53,10 +58,12 @@ a {
   position: relative;
 }
 
+
 .archive-container::after {
   content: "";
   display: block;
-  height: 100px; /* spacer for hover photo */
+  height: 100px;
+  /* spacer for hover photo */
   flex-shrink: 0;
 }
 
@@ -66,7 +73,7 @@ a {
 }
 
 .archive-header h1 {
-  font-family: Graphik;
+  font-family: monospace;
   font-size: 18px;
   color: #e3e3e3;
   padding: 0;
@@ -74,7 +81,7 @@ a {
 }
 
 .archive-header h2 {
-  font-family: Graphik;
+  font-family: monospace;
   font-size: 14px;
   padding: 0;
   margin: 0;
@@ -116,7 +123,7 @@ a {
 }
 
 .archive-box h1 {
-  font-family: Graphik;
+  font-family: monospace;
   font-size: 20px;
   padding: 0;
   margin: 0;
@@ -130,7 +137,7 @@ a {
 }
 
 .archive-title h1 {
-  font-family: Graphik;
+  font-family: monospace;
   font-size: 14px;
   line-height: 23px;
   padding: 0;
@@ -145,7 +152,7 @@ a {
 }
 
 .archive-info h1 {
-  font-family: Graphik;
+  font-family: monospace;
   font-size: 14px;
   line-height: 23px;
   color: #e3e3e3;
@@ -161,7 +168,7 @@ a {
 }
 
 .archive-date h1 {
-  font-family: Graphik;
+  font-family: monospace;
   font-size: 14px;
   line-height: 23px;
   padding: 0;
@@ -176,7 +183,7 @@ a {
 }
 
 .archive-photo h1 {
-  font-family: Graphik;
+  font-family: monospace;
   font-size: 14px;
   line-height: 23px;
   padding: 0;
@@ -219,8 +226,15 @@ a {
 
 /* ===== OPTIONAL photo load flicker remains ===== */
 @keyframes archivephotoload {
-  0%   { filter: invert(.3); mix-blend-mode: difference; }
-  100% { filter: invert(0);  mix-blend-mode: normal; }
+  0% {
+    filter: invert(.3);
+    mix-blend-mode: difference;
+  }
+
+  100% {
+    filter: invert(0);
+    mix-blend-mode: normal;
+  }
 }
 
 /* ===== PANEL TILE OVERLAY (masked reveal/cover) ===== */
@@ -230,13 +244,15 @@ a {
   inset: 0;
   display: grid;
   pointer-events: none;
-  z-index: 9999;   /* above everything during transition */
+  z-index: 9999;
+  /* above everything during transition */
   grid-template-columns: repeat(var(--cols, 16), 1fr);
-  grid-template-rows:    repeat(var(--rows, 9), 1fr);
+  grid-template-rows: repeat(var(--rows, 9), 1fr);
 }
 
 .archive-tile {
-  background: #171717; /* match menu bg */
+  background: #171717;
+  /* match menu bg */
   opacity: 0;
   transform: translateY(-28%) scale(1.02);
   will-change: transform, opacity;
@@ -250,10 +266,22 @@ a {
   animation-duration: 280ms;
   animation-timing-function: ease-out;
 }
+
 @keyframes tileReveal {
-  0%   { opacity: 1; transform: translateY(-28%) scale(1.02); }
-  70%  { opacity: 0.7; transform: translateY(6%)  scale(1.00); }
-  100% { opacity: 0; transform: translateY(0%)   scale(1.00); }
+  0% {
+    opacity: 1;
+    transform: translateY(-28%) scale(1.02);
+  }
+
+  70% {
+    opacity: 0.7;
+    transform: translateY(6%) scale(1.00);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(0%) scale(1.00);
+  }
 }
 
 /* CLOSE: tiles COVER (fade IN) */
@@ -262,38 +290,54 @@ a {
   animation-duration: 180ms;
   animation-timing-function: ease-in;
 }
+
 @keyframes tileCover {
-  0%   { opacity: 0; transform: translateY(0%)   scale(1.00); }
-  100% { opacity: 1; transform: translateY(-18%) scale(1.01); }
+  0% {
+    opacity: 0;
+    transform: translateY(0%) scale(1.00);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(-18%) scale(1.01);
+  }
 }
 
 
-.archive-grid{
+.archive-grid {
   display: flex;
   flex-wrap: wrap;
   flex-direction: row;
   width: 100%;
   height: 400px;
+    gap: 15px;
 }
 
-.archive-grid-item{
-  width: calc(100% / 3);
+.grid-br{
+  border-radius: 20px 0px 0px 0px;
+}
+
+.archive-grid-item {
+  width: calc((100% / 3) - 10px);
   height: 50%;
   box-sizing: border-box;
   border: .5px dotted white;
   border-width: 0px .5px .5px 0px;
+  
 }
 
-.archive-grid-item img{
+.archive-grid-item img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   transition: .3s;
 }
 
-.archive-grid-item img:hover{
+.archive-grid-item img:hover {
   filter: brightness(.2);
-}/* ------------------------------------------
+}
+
+/* ------------------------------------------
    ARCHIVE MENU — CLEAN BASE + PANEL REVEAL
    ------------------------------------------ */
 
@@ -303,23 +347,30 @@ a {
   color: #e3e3e3;
 }
 
+
+
 /* ===== MENU CONTAINER (visibility/opacity + pointer events fix) ===== */
 #archivemenu {
   position: fixed;
   inset: 0;
-  z-index: 1000;              /* above page content, below dock(900 uses below, this stays above) */
+  z-index: 1000;
+  /* above page content, below dock(900 uses below, this stays above) */
   overflow-y: auto;
   background: #171717;
-  display: block;             /* never toggle in JS */
+  display: block;
+  /* never toggle in JS */
   visibility: hidden;
   opacity: 0;
-  pointer-events: none;       /* <— IMPORTANT: don't block taps when hidden */
+  pointer-events: none;
+  /* <— IMPORTANT: don't block taps when hidden */
   transition: opacity 140ms linear, visibility 0s linear 140ms;
 }
+
 #archivemenu.is-visible {
   visibility: visible;
   opacity: 1;
-  pointer-events: auto;       /* <— clickable only when visible */
+  pointer-events: auto;
+  /* <— clickable only when visible */
   transition: opacity 140ms linear;
 }
 
@@ -347,46 +398,254 @@ a {
   position: relative;
 }
 
-.archive-container::after { content:""; display:block; height:100px; flex-shrink:0; }
+@media all and (max-width: 800px) {
+  .archive-container {
+    width: calc(100vw - 0px);
+    padding: 17px;
+    padding-top: 80px;
+  }
+}
 
-.archive-header { padding:20px; margin-bottom:0; }
-.archive-header h1 { font-family: Graphik; font-size:18px; color:#e3e3e3; margin:0; }
-.archive-header h2 { font-family: Graphik; font-size:14px; margin:0; color:#e3e3e3; }
+
+.archive-container::after {
+  content: "";
+  display: block;
+  height: 100px;
+  flex-shrink: 0;
+}
+
+.archive-header {
+  padding: 20px;
+  margin-bottom: 0;
+}
+
+.archive-header h1 {
+  font-family: monospace;
+  font-size: 18px;
+  color: #e3e3e3;
+  margin: 0;
+}
+
+.archive-header h2 {
+  font-family: monospace;
+  font-size: 14px;
+  margin: 0;
+  color: #e3e3e3;
+}
 
 .archive-box {
-  height: 28px; display:flex; flex-direction:row; justify-content:left;
-  border-bottom:1px dotted #e3e3e3; padding:0; color:#e3e3e3;
+  height: 28px;
+  display: flex;
+  flex-direction: row;
+  justify-content: left;
+  border-bottom: 1px dotted #e3e3e3;
+  padding: 0;
+  color: #e3e3e3;
 }
-.archive-box:hover { background-color:dodgerblue; color:white; }
-.archive-box:hover .archive-title h1 { text-decoration:underline; }
-.archive-box:hover .archive-photo { position:fixed; top:0; right:0; height:100vh; width:calc(40vw - 12px); }
 
-.archive-box h1 { font-family: Graphik; font-size:20px; margin:0; }
+.archive-box:hover {
+  background-color: dodgerblue;
+  color: white;
+}
 
-.archive-title { padding:4px 0 4px 20px; width:50%; border-right:1px dotted #e3e3e3; overflow:hidden; }
-.archive-title h1 { font-family: Graphik; font-size:14px; line-height:23px; margin:0; }
+@media all and (max-width: 800px) {
+  .archive-box:hover {
+    background-color: unset;
+  }
+}
 
-.archive-info { padding:4px 0 4px 9px; width:25%; border-right:1px dotted #e3e3e3; overflow:hidden; }
-.archive-info h1 { font-family: Graphik; font-size:14px; line-height:23px; color:#e3e3e3; margin:0; }
+.archive-box:hover .archive-title h1 {
+  text-decoration: underline;
+}
 
-.archive-date { padding:4px 0 4px 9px; width:10%; min-width:50px; border-right:1px dotted #e3e3e3; }
-.archive-date h1 { font-family: Graphik; font-size:14px; line-height:23px; margin:0; }
+.archive-box:hover .archive-photo {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: calc(40vw - 12px);
+}
 
-.archive-photo { padding:4px 0 4px 9px; width:40%; height:40px; box-sizing:border-box; }
+.archive-box h1 {
+  font-family: monospace;
+  font-size: 20px;
+  margin: 0;
+}
+
+@media all and (max-width: 800px) {
+  .archive-box h1 {
+    font-size: 12px;
+  }
+}
+
+
+.archive-title {
+  padding: 4px 0 4px 20px;
+  width: 50%;
+  border-right: 1px dotted #e3e3e3;
+  overflow: hidden;
+}
+
+@media all and (max-width: 800px) {
+  .archive-title {
+    padding: 4px 0px 4px 10px;
+    border-right: none;
+  }
+}
+
+.archive-title h1 {
+  font-family: monospace;
+  font-size: 14px;
+  line-height: 23px;
+  margin: 0;
+}
+
+@media all and (max-width: 800px) {
+  .archive-title h1 {
+    font-size: 10px;
+  }
+}
+
+.archive-info {
+  padding: 4px 0 4px 9px;
+  width: 25%;
+  border-right: 1px dotted #e3e3e3;
+  overflow: hidden;
+}
+
+@media all and (max-width: 800px) {
+  .archive-info {
+    display: none;
+  }
+}
+
+.archive-info h1 {
+  font-family: monospace;
+  font-size: 14px;
+  line-height: 23px;
+  color: #e3e3e3;
+  margin: 0;
+}
+
+.archive-date {
+  padding: 4px 0 4px 9px;
+  width: 10%;
+  min-width: 50px;
+  border-right: 1px dotted #e3e3e3;
+}
+
+@media all and (max-width: 800px) {
+  .archive-date {
+    display: none;
+  }
+}
+
+.archive-date h1 {
+  font-family: monospace;
+  font-size: 14px;
+  line-height: 23px;
+  margin: 0;
+}
+
+.archive-photo {
+  padding: 4px 0 4px 9px;
+  width: 40%;
+  height: 40px;
+  box-sizing: border-box;
+}
+
+.archive-photo h1{
+  font-size: 14px;
+}
+
+@media all and (max-width: 800px) {
+  .archive-photo {
+    display: none;
+  }
+}
+
 .archive-photo img {
-  position:fixed; top:0; right:0; height:100vh; width:calc(40vw - 15px);
-  display:none; object-fit:cover; opacity:1; z-index:10;
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: calc(40vw - 15px);
+  display: none;
+  object-fit: cover;
+  opacity: 1;
+  z-index: 10;
   transition: opacity 0.8s, display 0.8s allow-discrete;
 }
-.archive-box:not(:hover) .archive-photo img { opacity:0; mix-blend-mode:difference; display:none; }
 
-.archive-photospace { display:none; width:40%; height:40px; box-sizing:border-box; }
-.archive-box:hover .archive-photospace { display:flex; }
+.archive-box:not(:hover) .archive-photo img {
+  opacity: 0;
+  mix-blend-mode: difference;
+  display: none;
+}
+
+.archive-photospace {
+  display: none;
+  width: 40%;
+  height: 40px;
+  box-sizing: border-box;
+}
+
+.archive-box:hover .archive-photospace {
+  display: flex;
+}
 
 /* optional photo load flicker */
 @keyframes archivephotoload {
-  0% { filter:invert(.3); mix-blend-mode:difference; }
-  100% { filter:invert(0); mix-blend-mode:normal; }
+  0% {
+    filter: invert(.3);
+    mix-blend-mode: difference;
+  }
+
+  100% {
+    filter: invert(0);
+    mix-blend-mode: normal;
+  }
 }
 
 /* (tile overlay CSS omitted here since you said "fade" works well now) */
+
+@media all and (max-width: 800px) {
+  .archive-header {
+    padding: 20px 0px;
+  }
+}
+
+@media all and (max-width: 800px) {
+  .archive-header h1 {
+    font-size: 12px;
+  }
+}
+
+@media all and (max-width: 800px) {
+  .archive-grid {
+    display: flex;
+    flex-wrap: wrap;
+    flex-direction: row;
+    width: 100%;
+    height: 200px;
+    gap: 10px 0px;
+  }
+}
+
+@media all and (max-width: 800px) {
+  .archive-grid-item {
+  width: calc(100% / 2);
+  height: calc(100% / 3);
+  box-sizing: border-box;
+  border: .5px dotted white;
+  border-width: 0px .5px .5px 0px;
+
+}
+}
+
+@media all and (max-width: 800px) {
+  .grid-br {
+
+  border-radius: 8px 0px 0px 0px;
+}
+}

@@ -1,0 +1,9 @@
+.about-wrapper{
+    position:absolute;
+    top: 200px;
+    left: 35px;
+    color: white;
+    background-color: red;
+}
+
+.about-container{}
