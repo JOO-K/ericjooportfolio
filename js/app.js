@@ -1,4 +1,4 @@
-// app.js — viewport-locked canvas, loader, dock (tiny source icons + joystick + preview + dots)
+// app.js — viewport-locked canvas, loader, dock (tiny source icons + joystick + dots)
 // + auto-shuffle every 8s until user interacts
 
 import { AsciiSilhouetteEffect } from './ascii.js';
@@ -7,6 +7,9 @@ import VideoConnectedParticlesEffect from './videoparticles.js';
 import VideoBezierOutlineEffect from './videobezier.js';
 import VideoMosaicPanelsEffect from './videomosaic.js';
 import { VideoPlaylist } from './playlist.js';
+
+// 🔊 music (adds a tiny player; does not change effects)
+import { initMusicPlayer } from './music.js';
 
 let currentEffect = null;
 let p5Instance = null;
@@ -32,7 +35,7 @@ const EFFECTS = {
   'video+mosaic'    : (opts) => new VideoMosaicPanelsEffect(opts),
 };
 
-// Thumbnails for preview
+// meta kept for titles (no preview thumbnails used now)
 const EFFECT_META = {
   'ascii+drips'     : { title: 'ASCII + Drips',               thumb: './images/effect_01.png' },
   'video+threshold' : { title: 'ASCII Video Threshold',       thumb: './images/effect_02.png' },
@@ -119,10 +122,22 @@ function boot(effectKey = currentKey) {
       currentEffect.video = sharedPlaylist;
       setP(70);
 
-      wireDock(onJoystickInput);   // build tiny source icons + joystick + preview + dots
+      wireDock(onJoystickInput);   // build tiny source icons + joystick + dots (preview removed)
       setActiveDot(effectKey);
       syncDockSizes();
-      setP(85);
+      setP(80);
+
+      // 🔊 Music player (bottom-left). One-time init, no autoplay.
+      if (!window.__musicInitDone) {
+        initMusicPlayer({
+          base: './music/',          // your folder with .mp3 and optional manifest.json
+          onUserGesture: () => {     // mark interaction so auto-rotate stops
+            userInteracted = true;
+            stopAutoRotate();
+          }
+        });
+        window.__musicInitDone = true;
+      }
 
       // kick off auto-rotation (only once)
       startAutoRotate();
@@ -371,7 +386,7 @@ function restoreDemoPlaylist() {
 }
 
 /* =======================
-   Dock UI
+   Dock UI (preview removed)
    ======================= */
 
 function wireDock(joystickCallback) {
@@ -437,15 +452,12 @@ function wireDock(joystickCallback) {
   const camBtn    = icoBtn('🎥', 'Webcam (W)');
   const demoBtn   = icoBtn('◼︎',  'Demo playlist (D)');
 
-const fileInput = mk('input', { position: 'absolute', left: '-9999px' });
-fileInput.type = 'file';
-fileInput.accept = 'video/*';  // iOS will now offer Photos / Files picker
-// no capture attribute so users can pick from Photos
-
+  const fileInput = mk('input', { position: 'absolute', left: '-9999px' });
+  fileInput.type = 'file';
+  fileInput.accept = 'video/*';  // iOS will now offer Photos / Files picker
 
   uploadBtn.addEventListener('click', (e) => {
     e.preventDefault();
-    // on mobile, direct .click() is required (no synthetic MouseEvent)
     fileInput.click();
   });
 
@@ -491,39 +503,6 @@ fileInput.accept = 'video/*';  // iOS will now offer Photos / Files picker
   });
   joy.wrapper.style.boxSizing = 'border-box';
   dock.appendChild(joy.wrapper);
-
-  // ---- PREVIEW (thumbnail box) ----
-  const preview = mk('div', {
-    position: 'relative',
-    width: '240px',
-    height: '120px',
-    borderRadius: '16px',
-    overflow: 'hidden',
-    background: 'rgba(14,17,26,0.55)',
-    backdropFilter: 'blur(6px)',
-    border: '1px solid rgba(230,232,240,0.18)',
-    boxShadow: '0 2px 12px rgba(0,0,0,0.25)',
-    pointerEvents: 'auto',
-    boxSizing: 'border-box',
-  });
-  preview.id = 'fx-preview';
-  preview.addEventListener('pointerdown', () => { userInteracted = true; stopAutoRotate(); }, { passive: true });
-  preview.addEventListener('touchstart',  () => { userInteracted = true; stopAutoRotate(); }, { passive: true });
-  preview.addEventListener('click',       () => { userInteracted = true; stopAutoRotate(); });
-
-  const img = mk('img', {
-    position: 'absolute',
-    inset: '0',
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-    opacity: '0.88',
-    filter: 'saturate(1.05) contrast(1.02)',
-    pointerEvents: 'none',
-  });
-  img.alt = '';
-  img.addEventListener('load', () => requestAnimationFrame(syncDockSizes));
-  preview.appendChild(img);
 
   // ---- DOTS — VIDEO THRESHOLD FIRST ----
   const bar = mk('div', {
@@ -575,7 +554,6 @@ fileInput.accept = 'video/*';  // iOS will now offer Photos / Files picker
   addDot('video+mosaic');
 
   // Assemble
-  dock.appendChild(preview);
   dock.appendChild(bar);
   document.body.appendChild(dock);
 
@@ -585,15 +563,11 @@ fileInput.accept = 'video/*';  // iOS will now offer Photos / Files picker
   ro.observe(bar);
   window.addEventListener('resize', syncDockSizes, { passive: true });
 
-  // Init preview image
-  updatePreview(currentKey);
-
   // ---- keyboard shortcuts: U/W/D ----
   const onKey = async (e) => {
     if (e.repeat) return;
     const k = (e.key || '').toLowerCase();
     if (k === 'u') {
-      // programmatic click is fine on desktop; on iOS the user presses the button anyway
       const input = dock.querySelector('input[type=file]');
       if (input) input.click();
     } else if (k === 'w') {
@@ -774,23 +748,17 @@ function onJoystickInput(payload) {
 }
 
 /* =======================
-   Dock sizing + preview + dots
+   Dock sizing + dots (preview removed)
    ======================= */
 
 function syncDockSizes() {
   const bar = document.getElementById('fx-dots');
-  const preview = document.getElementById('fx-preview');
   const joyWrap = document.getElementById('fx-joystick');
   if (!bar) return;
 
   const w = bar.offsetWidth; // rendered width incl. borders/padding
   if (w <= 0) return;
 
-  if (preview) {
-    preview.style.width = w + 'px';
-    const h = Math.max(1, bar.offsetHeight * 2);
-    preview.style.height = h + 'px';
-  }
   if (joyWrap) {
     joyWrap.style.width = w + 'px';
     joyWrap.style.height = w + 'px'; // square
@@ -808,25 +776,7 @@ function setActiveDot(key) {
       btn.style.opacity      = active ? '1' : '0.95';
     });
   }
-  updatePreview(key);
   requestAnimationFrame(syncDockSizes);
-}
-
-function updatePreview(key) {
-  const meta = EFFECT_META[key] || {};
-  const preview = document.getElementById('fx-preview');
-  if (preview) {
-    const img = preview.querySelector('img');
-    if (img) {
-      if (meta.thumb) {
-        img.src = meta.thumb;
-        img.style.background = 'none';
-      } else {
-        img.removeAttribute('src');
-        img.style.background = 'linear-gradient(135deg, #1b1f2a 0%, #0e111a 100%)';
-      }
-    }
-  }
 }
 
 /* =======================

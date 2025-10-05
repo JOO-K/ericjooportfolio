@@ -1,20 +1,283 @@
 // videothreshold.js — solid white threshold grid (raindrops + stroke length by joystick)
 // + OPTIONAL (only while joystick active): shape morph (line→cross→diamond→dot) + light color bloom
 //
-// Hover: attract crosses toward the pointer.
-// Click/tap: strong "bullet-hole" (explosive kick + shove) that grows/holds/heals.
-// Joystick:
-//   - Y axis = RAINDROPS
-//       * y > 0  => larger holes, lower frequency (heavy drops)
-//       * y < 0  => smaller holes, higher frequency (drizzle)
-//       * |y|    => intensity (both radius & rate scale with magnitude)
-//   - X axis = STROKE LENGTH scale (left = shorter, right = longer)
-//       * while joystick is active, also morphs shape (line→cross→diamond→dot)
-//
-// Draws full grid every frame with solid stroke when idle (performance-friendly).
+// Background: Audio-reactive Perlin terrain bands + Convex Hull (c2.js) drawn FIRST behind the grid.
+//   - Offscreen c2.Renderer; composited into the p5 canvas (no visible extra canvas).
+//   - BG fades in only while music is playing, based on window.__AUDIO_BUS.
+//   - Grid is NOT audio-reactive.
 
 import { CONFIG } from './config.js';
 import { VideoPlaylist } from './playlist.js';
+
+/* ---------- tiny helpers ---------- */
+function lerp(a, b, t) { return a + (b - a) * Math.max(0, Math.min(1, t)); }
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+/* ---------- Inline Kaleidoscope Perlin BG (per-ring personalities) ---------- */
+class InlineVoronoiBG {
+  constructor() {
+    this.hasC2 = !!window.c2;
+    this.canvas = null;
+    this.renderer = null;
+    this.perlin = null;
+
+    // fade based on audio activity
+    this.alpha = 0;
+    this.fadeSlew = 0.16;
+
+    // time
+    this._t = 0;
+
+    // symmetry & layout
+    this.petals = 8;        // radial symmetry sectors
+    this.ringsBase = 13;    // concentric lines (breathes with audio)
+    this.samples = 240;     // samples per ring (smoothness)
+    this.innerFrac = 0.06;  // inner radius as % of min(W,H)
+    this.outerFrac = 0.95;  // outer radius as % of min(W,H)
+
+    // stroke look
+    this.strokeBase = 0.65;   // thin baseline
+    this.strokeKick = 1.6;    // max on big kick
+    this.strokeColor = '#9aa0a6';
+
+    // drum envelopes
+    this._prevK = 0; this._prevS = 0; this._prevH = 0;
+    this.kickImpulse  = 0; // fast pop
+    this.snareImpulse = 0; // rotation jitter
+    this.hatImpulse   = 0; // micro shimmer
+  }
+
+  _bus() {
+    const b = window.__AUDIO_BUS || {};
+    const clamp = (v) => Math.max(0, Math.min(1, v ?? 0));
+    return {
+      rms:   clamp(b.rms),
+      bass:  clamp(b.bands?.bass),
+      mid:   clamp(b.bands?.mid),
+      treb:  clamp(b.bands?.treble),
+      k:     clamp(b.kick),
+      s:     clamp(b.snare),
+      h:     clamp(b.hat),
+    };
+  }
+
+  _ensureInit(p) {
+    if (!this.hasC2) return false;
+    const c2 = window.c2;
+    if (!this.canvas) {
+      this.canvas = document.createElement('canvas');
+      this.canvas.width  = Math.max(1, p.width | 0);
+      this.canvas.height = Math.max(1, p.height | 0);
+    }
+    if (!this.renderer) {
+      this.renderer = new c2.Renderer(this.canvas);
+      this.renderer.background(false);
+      this.perlin = new c2.Perlin();
+      this.perlin.detail(3, 0.5);
+    }
+    return true;
+  }
+
+  setup(p) { this._ensureInit(p); }
+  resize(p) {
+    if (!this._ensureInit(p)) return;
+    this.canvas.width  = Math.max(1, p.width | 0);
+    this.canvas.height = Math.max(1, p.height | 0);
+    this.renderer.size(this.canvas.width, this.canvas.height);
+  }
+
+  _updateDrums(bus) {
+    // edge-detect
+    if (bus.k > 0.6 && this._prevK <= 0.6) this.kickImpulse = 1.0;
+    if (bus.s > 0.55 && this._prevS <= 0.55) this.snareImpulse = 1.0;
+    if (bus.h > 0.50 && this._prevH <= 0.50) this.hatImpulse = 1.0;
+
+    // decay
+    this.kickImpulse  *= 0.90;
+    this.snareImpulse *= 0.90;
+    this.hatImpulse   *= 0.92;
+
+    this._prevK = bus.k; this._prevS = bus.s; this._prevH = bus.h;
+  }
+
+  update(p, dt) {
+    if (!this._ensureInit(p)) return;
+
+    const bus = this._bus();
+    const dtC = Math.max(0.016, dt || 0.016);
+
+    // fade in/out based on activity
+    const alive = (bus.rms > 0.02);
+    this.alpha += ((alive ? 1 : 0) - this.alpha) * this.fadeSlew;
+    if (this.alpha < 0.01) return;
+
+    this._updateDrums(bus);
+
+    // drive time by bass + treble
+    const baseSpeed = 0.10;
+    const speed = baseSpeed * (1.0 + 1.4 * bus.bass + 0.35 * bus.treb);
+    this._t += dtC * speed * 60;
+
+    // canvas metrics
+    const W = this.canvas.width, H = this.canvas.height;
+    const cx = W * 0.5, cy = H * 0.5;
+    const Rmin = Math.min(W, H) * this.innerFrac;
+    const Rmax = Math.min(W, H) * this.outerFrac;
+
+    // dynamic ring count with audio
+    const rings = Math.max(8, Math.round(this.ringsBase + 6 * (bus.rms + 0.35 * bus.mid)));
+
+    // overall amplitude budget (how wiggly radii are)
+    const ampBase  = 0.05 * Rmax;
+    const ampAudio = (0.28 * bus.bass + 0.14 * bus.mid + 0.18 * this.kickImpulse) * Rmax;
+
+    // global rotation wobble (snare) + micro shimmer (hat)
+    const wobble = (this.perlin.noise(this._t * 0.03, 0.17) - 0.5) * (0.06 + 0.20 * this.snareImpulse);
+
+    // draw
+    this.renderer.clear();
+    this.renderer.fill(false); // stroke only
+
+    const TWO_PI = Math.PI * 2;
+    const sector = TWO_PI / this.petals;
+
+    for (let i = 0; i < rings; i++) {
+      const tRing = i / Math.max(1, rings - 1);
+      const rBase = c2.map(i, 0, rings - 1, Rmin, Rmax);
+
+      // choose a mode per ring
+      const mode = i % 3; // 0=A (oscilloscope), 1=B (terrain), 2=C (kick ripples)
+
+      // per-ring params
+      let perlinGain, perlinFreq, shimmerGain, kickPulseGain, kickPulseFreq, hueShift, dashOnHat;
+      if (mode === 0) {
+        // inner oscilloscope: fast shimmer, lighter Perlin
+        perlinGain = 0.45;  perlinFreq = 1.15;
+        shimmerGain = 1.0 + 0.8 * (bus.h + 0.35 * this.hatImpulse);
+        kickPulseGain = 0.12; kickPulseFreq = 0.9;
+        hueShift = -4; dashOnHat = false;
+      } else if (mode === 1) {
+        // mid terrain: big Perlin, slow shimmer
+        perlinGain = 1.25;  perlinFreq = 0.85;
+        shimmerGain = 0.45 + 0.35 * (bus.h + 0.25 * this.snareImpulse);
+        kickPulseGain = 0.18; kickPulseFreq = 0.7;
+        hueShift = 0; dashOnHat = false;
+      } else {
+        // outer kick ripples: radial pulses, medium Perlin, optional dash on hats
+        perlinGain = 0.85;  perlinFreq = 1.0;
+        shimmerGain = 0.60 + 0.5 * (bus.h + 0.25 * this.snareImpulse);
+        kickPulseGain = 0.35; kickPulseFreq = 1.20;
+        hueShift = +6; dashOnHat = true;
+      }
+
+      // stroke width with kick pop (accent outer rings slightly)
+      const pop = (0.35 + 0.65 * tRing) * this.kickImpulse;
+      const lineW = Math.min(this.strokeKick, this.strokeBase + pop);
+      this.renderer.lineWidth(lineW);
+
+      // subtle per-ring color variation (treble shifts hue)
+      const hue = 210 + hueShift + 10 * bus.treb;
+      const sat = 10 + Math.round(14 * (0.35 + 0.65 * bus.treb));
+      const light = Math.round(46 + (1 - tRing) * 16);
+      this.renderer.stroke(window.c2.Color.hsl(hue, sat, light));
+
+      // hat dashes (only on mode C and only when hats are lively)
+      if (dashOnHat && this.renderer.lineDash) {
+        if (bus.h + this.hatImpulse > 0.35) {
+          const dashLen = 6 + Math.round(12 * (bus.h + 0.5 * this.hatImpulse));
+          const gapLen  = 4 + Math.round(10 * (bus.h + 0.5 * this.hatImpulse));
+          this.renderer.lineDash([dashLen, gapLen]);
+        } else {
+          this.renderer.lineDash([]); // solid
+        }
+      } else if (this.renderer.lineDash) {
+        this.renderer.lineDash([]); // ensure solid for other modes
+      }
+
+      // ring-specific Perlin amplitude (outer = more hills)
+      const amp = (ampBase + ampAudio) * Math.pow(tRing, 0.75) * perlinGain;
+
+      // slight per-ring rotation (wobble + per-mode offset)
+      const rot = wobble + (mode - 1) * 0.03 * (0.4 + 0.6 * bus.treb);
+
+      this.renderer.beginPath();
+
+      for (let j = 0; j < this.samples; j++) {
+        const t = j / (this.samples - 1);
+        let ang = t * TWO_PI + rot;
+
+        // kaleidoscope folding
+        const aIn = ang % sector;
+        const aFold = (aIn <= sector * 0.5) ? aIn : (sector - aIn);
+        const aOut = Math.floor(ang / sector) * sector + aFold;
+
+        // perlin domain (scaled by perlinFreq)
+        const nx = 0.035 * this._t + Math.cos(aOut) * 0.35 * perlinFreq + i * 0.041;
+        const ny = 0.035 * this._t + Math.sin(aOut) * 0.35 * perlinFreq - i * 0.033;
+
+        // base radius + Perlin hills
+        let r = rBase + (this.perlin.noise(nx, ny) - 0.5) * amp;
+
+        // micro “oscilloscope” ripple (hats/snare)
+        r += Math.sin(this._t * 0.04 * (1 + 14 * (bus.h + 0.4 * this.hatImpulse)) + j * 0.22 + i * 0.35)
+           * (2 + 8 * shimmerGain);
+
+        // kick-driven radial pulse (mode C pops harder)
+        const kp = kickPulseGain * this.kickImpulse;
+        if (kp > 0.001) {
+          r += Math.sin(this._t * 0.10 * (kickPulseFreq * (1 + 2.0 * this.kickImpulse)) + t * TWO_PI * 2.0) * (6 + 38 * kp);
+        }
+
+        // clamp radius
+        r = Math.max(Rmin * 0.9, Math.min(Rmax, r));
+
+        const x = cx + Math.cos(aOut) * r;
+        const y = cy + Math.sin(aOut) * r;
+
+        if (j === 0 && this.renderer.moveTo) this.renderer.moveTo(x, y);
+        else this.renderer.lineTo(x, y);
+      }
+
+      this.renderer.endPath(false); // stroke only
+    }
+
+    // (optional) tiny center burst on big kicks
+    if (this.kickImpulse > 0.28) {
+      const lw = Math.min(this.strokeKick, this.strokeBase + this.kickImpulse * 1.3);
+      this.renderer.lineWidth(lw);
+      if (this.renderer.lineDash) this.renderer.lineDash([]);
+      const spokes = this.petals * 2;
+      const Rmin = Math.min(W, H) * this.innerFrac;
+      const Rmax = Math.min(W, H) * this.outerFrac;
+      for (let s = 0; s < spokes; s++) {
+        const a = (s / spokes) * TWO_PI + wobble * 0.6;
+        const x0 = cx + Math.cos(a) * (Rmin * 0.95);
+        const y0 = cy + Math.sin(a) * (Rmin * 0.95);
+        const x1 = cx + Math.cos(a) * (Rmin + 0.18 * (Rmax - Rmin) * this.kickImpulse);
+        const y1 = cy + Math.sin(a) * (Rmin + 0.18 * (Rmax - Rmin) * this.kickImpulse);
+        this.renderer.beginPath();
+        this.renderer.lineTo(x0, y0);
+        this.renderer.lineTo(x1, y1);
+        this.renderer.endPath(false);
+      }
+    }
+  }
+
+  draw(p) {
+    if (!this.hasC2 || !this.canvas || this.alpha < 0.01) return;
+    p.push();
+    try {
+      p.drawingContext.save();
+      p.drawingContext.globalAlpha = this.alpha * 0.9;
+      p.drawingContext.drawImage(this.canvas, 0, 0, p.width, p.height);
+      p.drawingContext.restore();
+    } catch(_) {}
+    p.pop();
+  }
+}
+
+
+/* ========================================================================== */
 
 export default class VideoThresholdEffect {
   constructor(opts = {}) {
@@ -47,20 +310,20 @@ export default class VideoThresholdEffect {
     this.hoverRadius = 140;   // px
     this.hoverPull   = 1200;  // force
 
-    // ===== Bullet-hole ripple timing (finite: grow → hold → decay) =====
-    this.HOLE_RADIUS_BASE = 150; // default radius (click)
-    this.GROW_TIME   = 0.10;     // faster pop
+    // bullet-hole ripple timing
+    this.HOLE_RADIUS_BASE = 150;
+    this.GROW_TIME   = 0.10;
     this.HOLD_TIME   = 0.25;
     this.DECAY_TIME  = 0.60;
 
-    // edge & inside behaviors — strong
-    this.EDGE_BAND     = 28;     // px — shove band while growing
+    // shove forces
+    this.EDGE_BAND     = 28;
     this.EDGE_PUSH     = 9000;
     this.INSIDE_PUSH   = 14000;
 
-    // extra instantaneous explosive kick early in the event
-    this.IMPACT_WINDOW = 0.085;  // s, during which we inject velocity
-    this.IMPULSE_VEL   = 2200;   // px/s at unit depth (inside) — added to vx,vy
+    // extra instantaneous kick
+    this.IMPACT_WINDOW = 0.085;
+    this.IMPULSE_VEL   = 2200;
 
     this.MAX_RIPPLES = 18;
     this.ripples = [];           // { x, y, t0, radius }
@@ -76,54 +339,45 @@ export default class VideoThresholdEffect {
     this._dt = 1/60;
     this._canvas = null;
 
-    // ===== Joystick-driven parameters =====
-    this._jx = 0;           // last joystick X
-    this._jy = 0;           // last joystick Y
-    this._jmag = 0;         // last joystick magnitude 0..1
-    this._jactive = false;  // last "active" flag (from UI) or inferred by mag
+    // joystick state
+    this._jx = 0; this._jy = 0; this._jmag = 0; this._jactive = false;
 
-    // Raindrops
-    this.dropRateHz   = 0;  // 0..~20 Hz (slightly higher than before)
-    this.dropClockSec = 0;  // accumulator
+    // raindrops
+    this.dropRateHz   = 0;
+    this.dropClockSec = 0;
     this.dropRadius   = this.HOLE_RADIUS_BASE;
 
-    // Stroke length scaling (cross arm length)
-    this.strokeLenScale = 1.0; // 0.5..1.9 typically
+    // stroke length scaling (cross arm length)
+    this.strokeLenScale = 1.0;
 
-    // Shape morph phase (only used while joystick active)
+    // shape morph (active only)
     this._shapePhase = 0;
+    this._hueBase = 210; this._hueSpan = 50; this._bloom = 0.6; this._joyActiveEps = 0.12;
 
-    // Lightweight color settings (only used while joystick active)
-    this._hueBase = 210;     // center hue
-    this._hueSpan = 50;      // ± span
-    this._bloom = 0.6;       // 0..1 bloom mix
-    this._joyActiveEps = 0.12;
+    // background
+    this._bg = new InlineVoronoiBG();
   }
 
-  // Joystick mapping:
-  //  Y>0  => THICC low-rate rain (big holes, slow cadence)
-  //  Y<0  => DRIZZLE high-rate rain (small holes, fast cadence)
-  //  |Y|  => intensity
-  //  X    => stroke length scale (left shorter, right longer) + (when active) shape morph
+  // joystick mapping
   onJoystick({ x = 0, y = 0, mag = 0, active = false } = {}) {
     this._jx = x;
     this._jy = y;
-    this._jmag = Math.max(0, Math.min(1, mag || 0));
+    this._jmag = clamp01(mag || 0);
     this._jactive = !!active || this._jmag > this._joyActiveEps;
 
     const magY = Math.min(1, Math.max(0, Math.abs(y)));
 
-    // Frequency — slightly higher overall; drizzle fastest
-    const MAX_HZ = 20;                  // was 15
+    // Frequency — drizzle faster, heavy slower
+    const MAX_HZ = 20;
     const baseHz = MAX_HZ * magY;
-    this.dropRateHz = y >= 0 ? baseHz * 0.45 : baseHz * 1.20; // heavy slower, drizzle faster
+    this.dropRateHz = y >= 0 ? baseHz * 0.45 : baseHz * 1.20;
 
-    // Radius — smaller overall; drizzle gets smaller minimum
-    const R_SMALL = 40;   // was 70
+    // Radius — drizzle smaller min, heavy larger
+    const R_SMALL = 40;
     const R_LARGE = 240;
     this.dropRadius = y >= 0
-      ? lerp(this.HOLE_RADIUS_BASE, R_LARGE, magY)   // y up → bigger (but same max as before)
-      : lerp(R_SMALL, this.HOLE_RADIUS_BASE, magY);  // y down → smaller
+      ? lerp(this.HOLE_RADIUS_BASE, R_LARGE, magY)
+      : lerp(R_SMALL, this.HOLE_RADIUS_BASE, magY);
 
     // Stroke length — map X into ~0.55..1.9
     const magX = Math.min(1, Math.max(0, Math.abs(x)));
@@ -145,6 +399,9 @@ export default class VideoThresholdEffect {
       this.video?.resize?.(p.width, p.height);
     }
     this._rebuildGrid(p);
+
+    // robust: lazy init inside bg, but call once here too
+    this._bg.setup(p);
 
     p.strokeCap(p.ROUND);
     p.strokeJoin(p.ROUND);
@@ -183,6 +440,7 @@ export default class VideoThresholdEffect {
   resize(p) {
     this.video?.resize?.(p.width, p.height);
     this._rebuildGrid(p);
+    this._bg.resize(p);
   }
 
   _rebuildGrid(p) {
@@ -210,25 +468,20 @@ export default class VideoThresholdEffect {
   }
   _smoothstep(x) { return x <= 0 ? 0 : x >= 1 ? 1 : x*x*(3 - 2*x); }
 
-  // finite ripple radius profile: grow → hold → decay
+  // ripple profile
   _rippleRadius(now, rp) {
     const age = Math.max(0, now - rp.t0);
     if (age < this.GROW_TIME) {
-      const t = this._smoothstep(age / this.GROW_TIME);
-      return rp.radius * t;
+      const t = this._smoothstep(age / this.GROW_TIME); return rp.radius * t;
     }
-    if (age < this.GROW_TIME + this.HOLD_TIME) {
-      return rp.radius;
-    }
+    if (age < this.GROW_TIME + this.HOLD_TIME) return rp.radius;
     const d = age - (this.GROW_TIME + this.HOLD_TIME);
     if (d < this.DECAY_TIME) {
-      const t = 1 - this._smoothstep(d / this.DECAY_TIME);
-      return rp.radius * t;
+      const t = 1 - this._smoothstep(d / this.DECAY_TIME); return rp.radius * t;
     }
-    return -1; // finished
+    return -1;
   }
 
-  // spawn helpers
   _spawnRipple(x, y, tSec, radius) {
     this.ripples.push({ x, y, t0: tSec, radius: radius ?? this.HOLE_RADIUS_BASE });
     if (this.ripples.length > this.MAX_RIPPLES) this.ripples.shift();
@@ -240,12 +493,14 @@ export default class VideoThresholdEffect {
 
     p.background(CONFIG.BG_COLOR);
 
+    // update bg first (so it draws behind)
+    this._bg.update(p, this._dt);
+
     // prune finished ripples
     const now = p.millis() * 0.001;
     this.ripples = this.ripples.filter(rp => this._rippleRadius(now, rp) >= 0);
 
-    // ===== Joystick procedural "raindrops" =====
-    // Only actually spawn if joystick Y is contributing some rate (same as before).
+    // joystick raindrops
     if (this.dropRateHz > 0.001) {
       this.dropClockSec += this._dt;
       const period = 1 / this.dropRateHz;
@@ -257,9 +512,8 @@ export default class VideoThresholdEffect {
         const dropsThisTick = dropsPerTickBase;
         for (let h = 0; h < dropsThisTick; h++) {
           let x, y;
-          const rad = this.dropRadius * (0.85 + Math.random() * 0.3); // slight variance
+          const rad = this.dropRadius * (0.85 + Math.random() * 0.3);
           if (this.pointerX >= 0 && this.pointerY >= 0) {
-            // jitter around the cursor for painterly control
             const jitterR = rad * 0.65 * (Math.random() * 0.8);
             const theta = Math.random() * Math.PI * 2;
             x = this.pointerX + Math.cos(theta) * jitterR;
@@ -279,9 +533,11 @@ export default class VideoThresholdEffect {
   draw(p) {
     if (!this.maskData) return;
 
-    const cell = this.cell, cols = this.cols, rows = this.rows, dt = this._dt;
-    const tSec = p.millis() * 0.001;
+    // draw background behind grid
+    this._bg.draw(p);
 
+    const cell = this.cell, cols = this.cols, rows = this.rows;
+    const tSec = p.millis() * 0.001;
     const gridPhase = this.phaseTick % this.PHASES; this.phaseTick++;
 
     p.push();
@@ -319,8 +575,7 @@ export default class VideoThresholdEffect {
 
         const now = tSec;
 
-        // ===== bullet-hole ripples (strong) =====
-        // Also compute a small "influence" for optional color bloom (only used when active)
+        // ripples
         let colorInfluence = 0;
         for (let r = 0; r < this.ripples.length; r++) {
           const rp = this.ripples[r];
@@ -338,7 +593,6 @@ export default class VideoThresholdEffect {
             fx += (dx / d) * mag;
             fy += (dy / d) * mag;
 
-            // explosive *velocity* kick for the first ~IMPACT_WINDOW seconds
             const age = Math.max(0, now - rp.t0);
             if (age <= this.IMPACT_WINDOW) {
               const kick = this.IMPULSE_VEL * depth;
@@ -360,78 +614,62 @@ export default class VideoThresholdEffect {
           }
         }
 
-        // spring to center + damping
+        // spring + damping
         fx += -this.springK * ox - this.damping * vx;
         fy += -this.springK * oy - this.damping * vy;
 
         // integrate
-        vx += fx * dt; vy += fy * dt;
-        ox += vx * dt; oy += vy * dt;
+        vx += fx * this._dt; vy += fy * this._dt;
+        ox += vx * this._dt; oy += vy * this._dt;
 
         this.state[sIdx    ] = ox;
         this.state[sIdx + 1] = oy;
         this.state[sIdx + 2] = vx;
         this.state[sIdx + 3] = vy;
 
-        // --- appearance --------------------------------------
-
-        // stroke weight by darkness
+        // appearance (NOT audio-reactive)
         const br = this._brightnessAt(cx, cy, p);
         const darkness = 1 - Math.min(Math.max(br / 255, 0), 1);
         const w = this.strokeMin + darkness * (this.strokeMax - this.strokeMin);
         const sizePx = Math.max(this.sizeMin, darkness * (cell * this.sizeMax));
-
         const angle = tSec * 0.7 + gx * 0.05 - gy * 0.04;
-        const lenScale = this.strokeLenScale; // 0.55..1.9
+        const lenScale = this.strokeLenScale;
         const rlen = sizePx * 0.5 * lenScale;
 
-        // IDLE (fast path): pure white rotating cross, exactly like your original
         if (!this._jactive) {
           p.stroke(this.strokeColor);
           p.strokeWeight(w);
-          p.push();
-          p.translate(cx + ox, cy + oy);
-          p.rotate(angle);
+          p.push(); p.translate(cx + ox, cy + oy); p.rotate(angle);
           p.line(-rlen, 0, rlen, 0);
           p.line(0, -rlen, 0, rlen);
           p.pop();
           continue;
         }
 
-        // ACTIVE (joystick engaged): lightweight color + shape morph
-        // Color: cheap HSL sine (no noise), with subtle bloom from nearby impacts
+        // ACTIVE (joystick engaged): lightweight color + morph
         const hueCenter = this._hueBase;
-        const hue = (hueCenter + this._hueSpan * Math.sin(0.5 * tSec + 0.08 * gx - 0.07 * gy) 
+        const hue = (hueCenter + this._hueSpan * Math.sin(0.5 * tSec + 0.08 * gx - 0.07 * gy)
                      + this._hueSpan * this._bloom * colorInfluence) % 360;
         const sat = 54 + Math.floor(28 * Math.min(1, colorInfluence * 1.2));
         const lit = 62 + Math.floor(12 * Math.min(1, colorInfluence));
         p.stroke(`hsl(${(hue+360)%360}, ${sat}%, ${lit}%)`);
         p.strokeWeight(w);
 
-        // Morph: map |X|∈[0,1] → 3 stages (0..1..2..3)
         const shapePhase = this._shapePhase * 3.0; // 0..3
-        const stage = Math.floor(shapePhase);      // 0,1,2
-        const localT = Math.max(0, Math.min(1, shapePhase - stage)); // 0..1
+        const stage = Math.floor(shapePhase);
+        const localT = Math.max(0, Math.min(1, shapePhase - stage));
 
         p.push();
         p.translate(cx + ox, cy + oy);
         p.rotate(angle);
 
         if (stage === 0) {
-          // line → cross
           drawLine(p, rlen);
-          if (localT > 0) {
-            p.push();
-            p.drawingContext.globalAlpha = localT;
-            drawCross(p, rlen);
-            p.pop();
-          }
+          if (localT > 0) { p.push(); p.drawingContext.globalAlpha = localT; drawCross(p, rlen); p.pop(); }
         } else if (stage === 1) {
-          // cross → diamond
           p.push(); p.drawingContext.globalAlpha = 1 - localT; drawCross(p, rlen);   p.pop();
           p.push(); p.drawingContext.globalAlpha = localT;     drawDiamond(p, rlen); p.pop();
         } else {
-          // diamond → dot
           p.push(); p.drawingContext.globalAlpha = 1 - localT; drawDiamond(p, rlen); p.pop();
           p.push(); p.drawingContext.globalAlpha = localT;     drawDot(p, rlen * 0.9); p.pop();
         }
@@ -444,25 +682,7 @@ export default class VideoThresholdEffect {
 }
 
 /* ===== draw helpers (keep stroke state from caller) ===== */
-function drawLine(p, len) {
-  // single horizontal line (we're already rotated)
-  p.line(-len, 0, len, 0);
-}
-function drawCross(p, len) {
-  p.line(-len, 0, len, 0);
-  p.line(0, -len, 0, len);
-}
-function drawDiamond(p, len) {
-  p.beginShape();
-  p.vertex(0, -len);
-  p.vertex(len, 0);
-  p.vertex(0, len);
-  p.vertex(-len, 0);
-  p.endShape(p.CLOSE);
-}
-function drawDot(p, r) {
-  p.circle(0, 0, Math.max(2, r) * 2);
-}
-
-/* ===== tiny helpers ===== */
-function lerp(a, b, t) { return a + (b - a) * Math.max(0, Math.min(1, t)); }
+function drawLine(p, len) { p.line(-len, 0, len, 0); }
+function drawCross(p, len) { p.line(-len, 0, len, 0); p.line(0, -len, 0, len); }
+function drawDiamond(p, len) { p.beginShape(); p.vertex(0, -len); p.vertex(len, 0); p.vertex(0, len); p.vertex(-len, 0); p.endShape(p.CLOSE); }
+function drawDot(p, r) { p.circle(0, 0, Math.max(2, r) * 2); }
