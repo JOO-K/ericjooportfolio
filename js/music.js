@@ -4,6 +4,14 @@
 //  - Progress rail + thumb: same solid gray (no overlap)
 //  - Visualizer: slightly more sensitive to changes
 //  - Drums (K/S/H): much more sensitive + quicker retrigger
+//
+// NOTE: Paths are GitHub Pages–safe via MUSIC_BASE. To override at runtime, set:
+//   window.__MUSIC_BASE = '/my-site/music/';  // trailing slash optional; we normalize.
+//
+// NEW: Publishes window.__AUDIO_BUS for BG audio-reactive effects:
+//   { rms, bands:{bass,mid,treble}, playing, kick, snare, hat }
+
+const MUSIC_BASE = (window.__MUSIC_BASE || './music/').replace(/\/+$/, '') + '/';
 
 /* ---------- small helpers ---------- */
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -12,7 +20,7 @@ const mk = (tag, style = {}) => { const el = document.createElement(tag); Object
 const UI = { text:'#e6e8f0', white:'#ffffff' };
 const SIZE = {
   leftPad: 18,
-  gapY: 11,      // +3px vs before
+  gapY: 11,
   dot: 18,
   W: 240,
   vizH: 56,
@@ -20,33 +28,17 @@ const SIZE = {
   kshH: 6,
 };
 
-/* ====== SENSITIVITY CONTROLS (tweak these) ====== */
-// overall visualizer intensity scaler (bars + K/S/H width)
-// raised slightly from 0.85 -> 0.90 to be a touch stronger
+/* ====== SENSITIVITY CONTROLS ====== */
 const VISUALIZER_SCALE = 0.90;
-
-// gentle pre-gain applied to subband energy before scaling
-// increases responsiveness without making it too peaky
 const VISUALIZER_SENS = 1.12;
-
-// analyser smoothing: lower = more responsive (was 0.82)
 const ANALYSER_SMOOTHING = 0.75;
 
-// Drum detection (spectral flux) thresholds (lower = more sensitive)
-const DRUM_THR = {
-  kick:  0.040, // was ~0.06 (global), now lower → more hits
-  snare: 0.050,
-  hat:   0.030
-};
-
-// Drum retrigger cooldown in milliseconds (was ~90 ms)
+const DRUM_THR = { kick:0.040, snare:0.050, hat:0.030 };
 const DRUM_COOLDOWN_MS = 60;
+const DRUM_HIT_BOOST = 0.90;
+const DRUM_DECAY = 0.02;
 
-// Amount added on hit and per-frame decay (lower decay = holds slightly longer)
-const DRUM_HIT_BOOST = 0.90; // was 0.75
-const DRUM_DECAY     = 0.02; // was 0.03
-
-/* ================================================ */
+/* ================================== */
 
 let audio, ctx, sourceNode, analyser, gainNode;
 let dataFreq, dataTime;
@@ -58,6 +50,25 @@ let rafId = 0;
 const features = { bands:{}, rms:0, kick:0, snare:0, hat:0 };
 const _prevSubband = { kick:null, snare:null, hat:null };
 const _kshCooldown = { kick:0, snare:0, hat:0 };
+
+/* ---------- AUDIO BUS PUBLISHER ---------- */
+function publishAudioBus() {
+  // Build a stable object (avoid realloc every frame for listeners that keep a ref)
+  if (!window.__AUDIO_BUS) window.__AUDIO_BUS = {
+    rms: 0, playing: false,
+    bands: { bass:0, mid:0, treble:0 },
+    kick: 0, snare: 0, hat: 0,
+  };
+  const bus = window.__AUDIO_BUS;
+  bus.rms = clamp01(features.rms);
+  bus.playing = !!isPlaying;
+  bus.bands.bass   = clamp01(features.bands.bass   || 0);
+  bus.bands.mid    = clamp01(features.bands.mid    || 0);
+  bus.bands.treble = clamp01(features.bands.treble || 0);
+  bus.kick  = clamp01(features.kick);
+  bus.snare = clamp01(features.snare);
+  bus.hat   = clamp01(features.hat);
+}
 
 /* ---------- material symbols (icons) ---------- */
 function ensureMaterialSymbols() {
@@ -74,7 +85,7 @@ function ensureMaterialSymbols() {
       font-family: 'Material Symbols Outlined';
       font-weight: 400;
       font-style: normal;
-      font-size: 13px; /* fits inside 18px circle */
+      font-size: 13px;
       line-height: 1;
       display: inline-block;
       font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
@@ -89,7 +100,7 @@ function ensureMaterialSymbols() {
 /* ---------- playlist ---------- */
 async function loadPlaylist() {
   try {
-    const res = await fetch('/music/manifest.json', { cache:'no-store' });
+    const res = await fetch(MUSIC_BASE + 'manifest.json', { cache:'no-store' });
     if (res.ok) {
       const list = await res.json();
       const out = [];
@@ -101,17 +112,17 @@ async function loadPlaylist() {
     }
   } catch {}
   try {
-    const head = await fetch('/music/default.mp3', { method:'HEAD' });
+    const head = await fetch(MUSIC_BASE + 'default.mp3', { method:'HEAD' });
     if (head.ok) { playlist = [{ file:'default.mp3', title:'default' }]; return; }
   } catch {}
-  console.warn('[music] no tracks found. Provide /music/manifest.json or /music/default.mp3');
+  console.warn('[music] no tracks found. Provide music/manifest.json or music/default.mp3');
 }
 
 function currentTrackUrl() {
   const t = playlist[trackIdx]; if (!t) return null;
   const file = t.file || t.url || '';
   if (/^(?:https?:)?\/\//i.test(file)) return file;
-  return `/music/${file}`;
+  return MUSIC_BASE + file;
 }
 
 /* ---------- audio graph ---------- */
@@ -120,7 +131,7 @@ async function ensureAudioContext() {
   ctx = new (window.AudioContext || window.webkitAudioContext)();
 
   gainNode = ctx.createGain();
-  gainNode.gain.value = 0.30; // default 30%
+  gainNode.gain.value = 0.30;
 
   analyser = ctx.createAnalyser();
   analyser.fftSize = 2048;
@@ -138,7 +149,7 @@ async function ensureAudioContext() {
 function loadTrack(autoplay, onTitle) {
   const url = currentTrackUrl(); if (!url) return;
   audio.src = url; audio.load();
-  onTitle?.(); // update title immediately
+  onTitle?.();
   if (autoplay) {
     const go = () => audio.play().catch(()=>{});
     if (ctx && ctx.state === 'suspended') ctx.resume().then(go); else go();
@@ -155,17 +166,14 @@ function hzToIndex(hz) {
   return Math.max(0, Math.min(max, i));
 }
 
-/* A-weighting curve (approx) to emphasize human hearing; used gently */
 function aWeighting(hz) {
   if (hz <= 0) return 0;
   const f2 = hz * hz;
   const num = (12194**2) * f2 * f2;
   const den = (f2 + 20.6**2) * Math.sqrt((f2 + 107.7**2) * (f2 + 737.9**2)) * (f2 + 12194**2);
-  const A = num / den;
-  return A;
+  return num / den; // linear
 }
 
-/* Weighted energy for a band, with gentle tilt and compression & overall trim */
 function subbandEnergyWeighted(loHz, hiHz) {
   const i0 = hzToIndex(loHz), i1 = hzToIndex(hiHz);
   let ws = 0, wsum = 0;
@@ -180,11 +188,8 @@ function subbandEnergyWeighted(loHz, hiHz) {
     wsum += w;
   }
   let v = wsum ? (ws / wsum) : 0;
-
-  // slightly less compression: keep the 0.75 exponent but add gentle pre-gain
   v = Math.pow(v, 0.75) * 0.9;
   v *= VISUALIZER_SENS;
-
   return v;
 }
 
@@ -202,10 +207,9 @@ function updateFeatures() {
   let sum=0; for (let i=0;i<dataTime.length;i++){ const v=(dataTime[i]-128)/128; sum+=v*v; }
   features.rms = Math.sqrt(sum/dataTime.length);
 
-  // drum heuristics via subband spectral flux + cooldown
+  // drums via spectral flux + cooldown
   const bands = { kick:[40,120], snare:[180,2500], hat:[5000,12000] };
-  const dt = 16; // ~frame delta (ms)
-
+  const dt = 16;
   for (const k of ['kick','snare','hat']) {
     const [lo,hi] = bands[k];
     const i0 = hzToIndex(lo), i1 = hzToIndex(hi);
@@ -219,7 +223,7 @@ function updateFeatures() {
     }
     flux = n ? flux/n : 0;
 
-    const thr = DRUM_THR[k];                     // lower thresholds
+    const thr = DRUM_THR[k];
     const hit = flux > thr && _kshCooldown[k] <= 0;
 
     if (hit) {
@@ -232,7 +236,7 @@ function updateFeatures() {
   }
 }
 
-/* Build 24 log-ish bands with extra resolution in 2–10 kHz */
+/* Build 24 log-ish bands with extra resolution 2–10 kHz */
 function buildBandEdges(count) {
   const edges = [];
   const lo = 40, hi = 12000;
@@ -240,8 +244,7 @@ function buildBandEdges(count) {
     const t = i/count;
     const bias = 0.55;
     const tb = Math.pow(t, 1 - (bias - 0.5) * 0.8);
-    const hz = lo * Math.pow(hi/lo, tb);
-    edges.push(hz);
+    edges.push(lo * Math.pow(hi/lo, tb));
   }
   edges[edges.length-2] *= 1.15;
   edges[edges.length-1] = hi;
@@ -269,7 +272,7 @@ function buildUI() {
   });
   host.appendChild(column);
 
-  // --- visualizer (bars + K/S/H meters) ---
+  // --- visualizer ---
   const vizBox = mk('div', { width:'100%', pointerEvents:'none', boxSizing:'border-box' });
 
   const barsWrap = mk('div', { position:'relative', width:'100%', height:`${SIZE.vizH}px` });
@@ -315,7 +318,7 @@ function buildUI() {
   vizBox.appendChild(barsWrap);
   vizBox.appendChild(kshWrap);
 
-  // --- slider rails (scoped CSS per slider) ---
+  // --- sliders ---
   function makeRailRange(heightPx, thumbPx, ariaLabel, clsName) {
     const rail = mk('div', { width:`${SIZE.W}px`, pointerEvents:'none' });
     const input = mk('input', { width:'100%', boxSizing:'border-box', pointerEvents:'auto' });
@@ -339,7 +342,7 @@ function buildUI() {
         height:${heightPx}px; background:rgba(255,255,255,0.22); border-radius:999px; border:none;
       }
       #music-host input[type="range"].${clsName}::-webkit-slider-thumb {
-        -webkit-appearance:none; width:${thumbPx}px; height:${thumbPx}px;
+        -webkit-appearance:none; width:${thumbPx}px}; height:${thumbPx}px;
         border-radius:50%; background:#ffffff; border:none;
         margin-top:${thumbMarginTop}px;
       }
@@ -356,32 +359,24 @@ function buildUI() {
     return { rail, input };
   }
 
-  // progress (height 3px — thin) with its own class
+  // progress (height 3px — thin)
   const { rail:progRail, input:prog } = makeRailRange(3, SIZE.dot - 4, 'progress', 'music-prog');
   prog.min='0'; prog.max='1'; prog.step='0.001'; prog.value='0';
 
-  // Make progress rail + thumb same solid gray to hide overlap
+  // track & thumb same color
   {
-    const PROG_GRAY = '#9aa0a6'; // adjust to taste
+    const PROG_GRAY = '#9aa0a6';
     const css = document.createElement('style');
     css.textContent = `
-      #music-host input[type="range"].music-prog::-webkit-slider-runnable-track {
-        background: ${PROG_GRAY} !important;
-      }
-      #music-host input[type="range"].music-prog::-webkit-slider-thumb {
-        background: ${PROG_GRAY} !important;
-      }
-      #music-host input[type="range"].music-prog::-moz-range-track {
-        background: ${PROG_GRAY} !important;
-      }
-      #music-host input[type="range"].music-prog::-moz-range-thumb {
-        background: ${PROG_GRAY} !important;
-      }
+      #music-host input[type="range"].music-prog::-webkit-slider-runnable-track { background: ${PROG_GRAY} !important; }
+      #music-host input[type="range"].music-prog::-webkit-slider-thumb { background: ${PROG_GRAY} !important; }
+      #music-host input[type="range"].music-prog::-moz-range-track { background: ${PROG_GRAY} !important; }
+      #music-host input[type="range"].music-prog::-moz-range-thumb { background: ${PROG_GRAY} !important; }
     `;
     document.head.appendChild(css);
   }
 
-  // --- controls row ---
+  // controls row
   const row = mk('div', {
     width:`${SIZE.W}px`, display:'flex', alignItems:'center',
     gap:'10px', pointerEvents:'auto', boxSizing:'border-box'
@@ -389,33 +384,16 @@ function buildUI() {
 
   const dotBtn = (title, iconName) => {
     const b = mk('div', {
-      width: `${SIZE.dot}px`,
-      height: `${SIZE.dot}px`,
-      aspectRatio: '1 / 1',
-      borderRadius:'50%',
-      border:`1px solid ${UI.text}`,
-      background:'transparent',
-      color:UI.text,
-      display:'flex',
-      alignItems:'center',
-      justifyContent:'center',
-      cursor:'pointer',
-      boxSizing:'border-box',
-      lineHeight:'1',
-      userSelect:'none',
-      flex: '0 0 auto'
+      width: `${SIZE.dot}px`, height: `${SIZE.dot}px`, aspectRatio:'1 / 1',
+      borderRadius:'50%', border:`1px solid ${UI.text}`, background:'transparent', color:UI.text,
+      display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer',
+      boxSizing:'border-box', lineHeight:'1', userSelect:'none', flex:'0 0 auto'
     });
     b.title = title || '';
-    b.setAttribute('role','button');
-    b.setAttribute('tabindex','0');
-    const span = document.createElement('span');
-    span.className = 'ms-icn';
-    span.textContent = iconName;
-    b.appendChild(span);
-    b._iconSpan = span;
-    b.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); b.click(); }
-    });
+    b.setAttribute('role','button'); b.setAttribute('tabindex','0');
+    const span = document.createElement('span'); span.className = 'ms-icn'; span.textContent = iconName;
+    b.appendChild(span); b._iconSpan = span;
+    b.addEventListener('keydown', (e) => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); b.click(); }});
     return b;
   };
 
@@ -424,17 +402,14 @@ function buildUI() {
   const nextBtn = dotBtn('Next','arrow_forward_ios');
 
   // 100px marquee title
-  const titleBox = mk('div', {
-    width:'100px', overflow:'hidden', whiteSpace:'nowrap', position:'relative', flex:'0 0 auto'
-  });
+  const titleBox = mk('div', { width:'100px', overflow:'hidden', whiteSpace:'nowrap', position:'relative', flex:'0 0 auto' });
   const titleInner = mk('div', {
-    display:'inline-block', paddingLeft:'100%',
-    animation:'music-marquee 10s linear infinite',
+    display:'inline-block', paddingLeft:'100%', animation:'music-marquee 10s linear infinite',
     fontSize:'11px', opacity:'0.95'
   });
   titleBox.appendChild(titleInner);
 
-  // volume rail (height = dot/2) with its own class so it doesn’t override progress
+  // volume rail
   const volHeight = Math.round(SIZE.dot / 2);
   const { rail:volRail, input:vol } = makeRailRange(volHeight, SIZE.dot - 4, 'volume', 'music-vol');
   vol.min='0'; vol.max='1'; vol.step='0.01'; vol.value='0.30';
@@ -450,7 +425,6 @@ function buildUI() {
   column.appendChild(progRail);
   column.appendChild(row);
 
-  // marquee keyframes (scoped)
   const kf = document.createElement('style');
   kf.textContent = `@keyframes music-marquee { 0% { transform: translateX(0%); } 100% { transform: translateX(-100%); } }`;
   document.head.appendChild(kf);
@@ -485,6 +459,7 @@ function buildUI() {
       isPlaying = false;
       if (playBtn._iconSpan) playBtn._iconSpan.textContent = 'play_arrow';
     }
+    publishAudioBus(); // keep playing flag in sync immediately
   });
   vol.addEventListener('input', () => { if (gainNode) gainNode.gain.value = Number(vol.value); });
 
@@ -508,26 +483,16 @@ function buildUI() {
   function frame() {
     if (analyser && !audio.paused && !audio.ended) {
       updateFeatures();
-
-      // >>> EXPOSE AUDIO BUS for visual effects (read-only snapshot)
-      //     This lets videothreshold.js (and others) react to music.
-      window.__AUDIO_BUS = {
-        rms: features.rms,
-        kick: features.kick, snare: features.snare, hat: features.hat,
-        bands: { ...features.bands } // bass, lowMid, mid, highMid, treble
-      };
+      publishAudioBus(); // <<<<<< publish metrics every frame
 
       for (let i=0;i<bandCount;i++){
         const lo = bandEdges[i], hi = bandEdges[i+1];
         let v = subbandEnergyWeighted(lo, hi);
-
         const center = Math.sqrt(lo * hi);
         const autoGain = 1 + Math.min(1.0, Math.pow(center / 3200, 0.30));
         v = Math.min(1, v * autoGain);
 
-        // intensity & scale
         const vScaled = Math.min(1, v * VISUALIZER_SCALE);
-
         const HEADROOM = 0.85;
         const h = Math.round(2 + vScaled * (SIZE.vizH - 6) * HEADROOM);
 
@@ -542,13 +507,16 @@ function buildUI() {
         caps[i].style.bottom = Math.max(capH - 2, 0) + 'px';
       }
 
-      // also scale K/S/H meters
+      // K/S/H meters
       const kW = Math.round(clamp01(features.kick  * VISUALIZER_SCALE)*100);
       const sW = Math.round(clamp01(features.snare * VISUALIZER_SCALE)*100);
       const hW = Math.round(clamp01(features.hat   * VISUALIZER_SCALE)*100);
       k.fill.style.width = `${kW}%`;
       s.fill.style.width = `${sW}%`;
       h.fill.style.width = `${hW}%`;
+    } else {
+      // still keep bus's playing flag honest while paused
+      publishAudioBus();
     }
     rafId = requestAnimationFrame(frame);
   }
@@ -560,6 +528,9 @@ function buildUI() {
 /* ---------- public init ---------- */
 export async function initMusicPlayer() {
   if (document.getElementById('music-host')) return;
+
+  // initialize a default bus so listeners don’t fail before audio starts
+  publishAudioBus();
 
   audio = document.createElement('audio');
   audio.preload = 'auto';
@@ -574,10 +545,12 @@ export async function initMusicPlayer() {
     await ensureAudioContext();
     isPlaying = true;
     if (playBtn && playBtn._iconSpan) playBtn._iconSpan.textContent = 'pause';
+    publishAudioBus();
   });
   audio.addEventListener('pause', () => {
     isPlaying = false;
     if (playBtn && playBtn._iconSpan) playBtn._iconSpan.textContent = 'play_arrow';
+    publishAudioBus();
   });
   audio.addEventListener('ended', () => {
     if (!playlist.length) return;
@@ -589,6 +562,9 @@ export async function initMusicPlayer() {
     try { cancelAnimationFrame(rafId); } catch {}
     try { audio.pause(); } catch {}
     try { ctx && ctx.close && ctx.close(); } catch {}
+    // Mark not playing on unload
+    isPlaying = false;
+    publishAudioBus();
   });
 }
 
