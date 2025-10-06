@@ -1,5 +1,13 @@
-// videomosaic.js — Panels with fluid repacks + afterimage
+// videomosaic.js — Panels with fluid repacks + AUDIO-REACTIVE polish (NO FADE VERSION)
 // Joystick: gravity + directional "punch" impulses that push panels, which then spring back.
+//
+// Audio additions (gentle & non-jarring):
+//  • Repack cadence breathes with energy (faster on peaks, slower at rest)
+//  • Panel fill hue sweeps BLUE→ORANGE by “warmth” (bass+kick vs treble), low alpha to avoid glare
+//  • Size pulse on bass/kick (subtle 0–8%), tiny jitter on hats (≤2px), micro flash on kick edge
+//  • Stroke alpha reduced overall; stroke weight steady so it stays crisp
+//
+// CHANGE: Afterimage/trail fade is DISABLED. We hard-clear the layer every frame (no accumulation).
 
 import { CONFIG } from './config.js';
 import { VideoPlaylist } from './playlist.js';
@@ -19,11 +27,13 @@ function isInside(maskData, w, h, x, y) {
   return brightnessAt(maskData, w, h, x, y) < CONFIG.VIDEO.SIL_BRIGHTNESS_THRESHOLD;
 }
 const smoothstep = (t) => (t<=0?0:t>=1?1:t*t*(3-2*t));
+const clamp01 = (v)=>Math.max(0, Math.min(1, v));
+const lerp = (a,b,t)=>a+(b-a)*t;
 
 /* ----------------- effect ----------------- */
 export default class VideoMosaicPanelsEffect {
   constructor(opts = {}) {
-    this.name = 'Video Mosaic Panels (Fluid + Gaps + Afterimage + Joystick Physics)';
+    this.name = 'Video Mosaic Panels (Fluid + Gaps + Joystick Physics + Audio, No Fade)';
 
     this.video = opts.playlist || null;
     this._ownsVideo = !this.video;
@@ -40,23 +50,22 @@ export default class VideoMosaicPanelsEffect {
     this.tileSizes   = [1, 2, 3];
     this.tileWeights = [0.56, 0.30, 0.14];
 
-    // look
+    // look (softened to be less jarring)
     this.GAP_PX        = 2;
     this.panelCorner   = 6;
-    this.panelFill     = [20, 20, 24];
+    this.panelFill     = [20, 20, 24];     // base RGB, we tint with HSL on draw
     this.strokeColor   = [255, 255, 255];
-    this.strokeA       = 255;
-    this.strokeW       = 0.5;
+    this.strokeA       = 120;              // reduced alpha
+    this.strokeW       = 0.6;              // crisp but subtle
 
     // repack tween
-    this.REPACK_PERIOD_MS = 500;
-    this.REPACK_TWEEN_MS  = 420;
+    this.REPACK_PERIOD_MS_BASE = 540;      // slightly slower idle
+    this.REPACK_TWEEN_MS       = 420;
     this._lastPackAt      = 0;
     this._tweenStartAt    = 0;
     this._tweenActive     = false;
 
-    // afterimage trail
-    this.TRAIL_TAU_MS = CONFIG.ASCII_FADE_TAU_MS || 220;
+    // no-fade layer (we clear it fully each frame)
     this.trail = null;
     this.bgRgb = hexToRgb(CONFIG.BG_COLOR);
 
@@ -65,26 +74,40 @@ export default class VideoMosaicPanelsEffect {
     this._seed = 1337;
 
     // ---------- Joystick physics ----------
-    // global joystick state (fed by app.js via onJoystick)
     this._jx = 0;   // -1..1
     this._jy = 0;   // -1..1
     this._jmag = 0; // 0..1
     this._jactive = false;
 
-    // physics params (tuned for snap + settle)
-    this.SPRING_K    = 24.0;  // spring back to packed target
-    this.DAMPING     = 6.0;   // velocity damping
-    this.GRAVITY_MAX = 1800;  // px/s^2 at full joystick deflection
-    this.PUNCH_IMP   = 900;   // px/s impulse per punch (applied to vx, vy)
-    this.PUNCH_JITTER= 0.25;  // randomization of impulse ±25%
-    this.PUNCH_EVERY = 160;   // ms between auto-punches while held
+    // physics params (snap + settle)
+    this.SPRING_K    = 24.0;
+    this.DAMPING     = 6.0;
+    this.GRAVITY_MAX = 1800;
+    this.PUNCH_IMP   = 900;
+    this.PUNCH_JITTER= 0.25;
+    this.PUNCH_EVERY = 160;
     this._lastPunchAt= 0;
 
-    // to detect "shove" when the stick is yanked outward quickly
     this._prevMag = 0;
+
+    // ---------- Audio envelopes ----------
+    this._kEnv = 0; this._sEnv = 0; this._hEnv = 0; this._prevK = 0;
+    this.K_ATTACK = 1.00; this.K_DECAY = 0.90;
+    this.S_ATTACK = 0.85; this.S_DECAY = 0.93;
+    this.H_ATTACK = 0.85; this.H_DECAY = 0.94;
+    this._flash = 0; this.FLASH_DECAY = 0.86;
+
+    // color (HSL) span for fills
+    this.HUE_BLUE   = 210;
+    this.HUE_ORANGE = 30;
+
+    // cached per-frame audio snapshot
+    this._A = {
+      playing:false, rms:0, k:0, s:0, h:0,
+      bands: { bass:0, mid:0, treble:0 }
+    };
   }
 
-  // Joystick input from app.js (called every frame)
   onJoystick({ x = 0, y = 0, mag = 0, active = false } = {}) {
     this._jx = Math.max(-1, Math.min(1, x));
     this._jy = Math.max(-1, Math.min(1, y));
@@ -211,7 +234,6 @@ export default class VideoMosaicPanelsEffect {
     const next = nextList;
     const nMin = Math.min(curr.length, next.length);
 
-    // match existing to new + shrink rest
     for (let i = 0; i < nMin; i++) {
       const a = curr[i], b = next[i];
       a.sx = a.x;  a.sy = a.y;  a.sw = a.pw; a.sh = a.ph; a.sa = a._alpha ?? 255;
@@ -231,7 +253,6 @@ export default class VideoMosaicPanelsEffect {
         sx: b.x + b.pw * 0.5, sy: b.y + b.ph * 0.5, sw: 0, sh: 0, sa: 0,
         tx: b.x, ty: b.y, tw: b.pw, th: b.ph, ta: 255,
         _alpha: 0,
-        // physics state
         ox: 0, oy: 0, vx: 0, vy: 0
       });
     }
@@ -262,20 +283,18 @@ export default class VideoMosaicPanelsEffect {
         delete a.sx; delete a.sy; delete a.sw; delete a.sh; delete a.sa;
         delete a.tx; delete a.ty; delete a.tw; delete a.th; delete a.ta;
       }
-      // prune collapsed
       this.panels = this.panels.filter(pn => pn.pw > 0.5 && pn.ph > 0.5 && (pn._alpha ?? 255) > 1);
     }
   }
 
-  /* ---------- physics helpers ---------- */
   _ensurePhysicsState(pan) {
     if (pan.ox === undefined) { pan.ox = 0; pan.oy = 0; pan.vx = 0; pan.vy = 0; }
   }
 
-  _applyPunch(nowMs) {
+  _applyPunch(nowMs, strength = 1.0) {
     const j = Math.max(0.25, 1 + (Math.random()*2 - 1) * this.PUNCH_JITTER);
-    const impX = this.PUNCH_IMP * this._jx * j;
-    const impY = this.PUNCH_IMP * this._jy * j;
+    const impX = this.PUNCH_IMP * this._jx * j * strength;
+    const impY = this.PUNCH_IMP * this._jy * j * strength;
     for (const pan of this.panels) {
       this._ensurePhysicsState(pan);
       pan.vx += impX;
@@ -284,16 +303,40 @@ export default class VideoMosaicPanelsEffect {
     this._lastPunchAt = nowMs;
   }
 
+  _audio() {
+    const b = window.__AUDIO_BUS || {};
+    const c = (v)=> clamp01(v ?? 0);
+    return {
+      playing: !!b.playing,
+      rms: c(b.rms),
+      k: c(b.kick), s: c(b.snare), h: c(b.hat),
+      bands: {
+        bass:   c(b.bands?.bass),
+        mid:    c(b.bands?.mid),
+        treble: c(b.bands?.treble),
+      }
+    };
+  }
+
   update(p, dtMs) {
-    // Fade trail
-    const dt = Math.max(0.001, (dtMs || 16.7));         // ms
-    const dtSec = dt / 1000;
-    const a = 255 * (1 - Math.exp(-dt / this.TRAIL_TAU_MS));
-    this.trail.push();
-    this.trail.noStroke();
-    this.trail.fill(this.bgRgb.r, this.bgRgb.g, this.bgRgb.b, a);
-    this.trail.rect(0, 0, this.trail.width, this.trail.height);
-    this.trail.pop();
+    // --- audio envelopes ---
+    this._A = this._audio();
+    const A = this._A;
+
+    const EDGE = 0.55;
+    if (A.k > EDGE && this._prevK <= EDGE) { this._kEnv = 1.0; this._flash = 1.0; }
+    this._prevK = A.k;
+
+    this._kEnv = Math.max(this._kEnv * this.K_DECAY, A.k * this.K_ATTACK);
+    this._sEnv = Math.max(this._sEnv * this.S_DECAY, A.s * this.S_ATTACK);
+    this._hEnv = Math.max(this._hEnv * this.H_DECAY, A.h * this.H_ATTACK);
+    this._flash *= this.FLASH_DECAY;
+
+    const energy = clamp01(0.55*A.rms + 0.65*A.bands.bass + 0.55*this._kEnv);
+
+    // NO FADE: clear the layer fully (no accumulation)
+    this.trail.clear();
+    this.trail.background(this.bgRgb.r, this.bgRgb.g, this.bgRgb.b);
 
     // mask refresh
     this.maskData = this.video?.updateMask?.(p.width, p.height) ?? null;
@@ -315,9 +358,10 @@ export default class VideoMosaicPanelsEffect {
       this._lastPackAt   = p.millis();
     }
 
-    // periodic repack → tween
+    // periodic repack (audio-reactive): faster on peaks, slower at rest
+    const period = this.REPACK_PERIOD_MS_BASE * (1.15 - 0.55*energy);
     const nowMs = p.millis();
-    if (this.maskData && nowMs - this._lastPackAt >= this.REPACK_PERIOD_MS && !this._tweenActive) {
+    if (this.maskData && nowMs - this._lastPackAt >= period && !this._tweenActive) {
       this._seed = (Math.random() * 1e9) | 0;
       const next = this._packNow(p);
       this._beginTweenTo(next, p);
@@ -328,27 +372,25 @@ export default class VideoMosaicPanelsEffect {
     this._tweenStep(p);
 
     // --------- physics: gravity + spring + punch ----------
-    const gScale = this.GRAVITY_MAX * this._jmag;   // accel magnitude
+    const gScale = this.GRAVITY_MAX * this._jmag;
     const gx = this._jx * gScale;
     const gy = this._jy * gScale;
 
-    // auto-punch while held every PUNCH_EVERY ms
     if (this._jactive && (nowMs - this._lastPunchAt) >= this.PUNCH_EVERY) {
-      this._applyPunch(nowMs);
+      this._applyPunch(nowMs, 0.8 + 0.6*energy);
     }
 
-    // extra punch when the stick is yanked outward quickly
     const magDelta = this._jmag - this._prevMag;
     if (magDelta > 0.22) {
-      this._applyPunch(nowMs);
+      this._applyPunch(nowMs, 0.8 + 0.6*energy);
     }
     this._prevMag = this._jmag;
 
-    // integrate per panel
+    const dt = Math.max(0.001, (dtMs || 16.7));
+    const dtSec = dt / 1000;
     for (const pan of this.panels) {
       this._ensurePhysicsState(pan);
 
-      // spring to target (0,0 offset)
       const fx = -this.SPRING_K * pan.ox - this.DAMPING * pan.vx + gx;
       const fy = -this.SPRING_K * pan.oy - this.DAMPING * pan.vy + gy;
 
@@ -358,11 +400,9 @@ export default class VideoMosaicPanelsEffect {
       pan.ox += pan.vx * dtSec;
       pan.oy += pan.vy * dtSec;
 
-      // very soft clamp to avoid runaway
       const vmax = 2200;
       if (pan.vx >  vmax) pan.vx =  vmax; else if (pan.vx < -vmax) pan.vx = -vmax;
       if (pan.vy >  vmax) pan.vy =  vmax; else if (pan.vy < -vmax) pan.vy = -vmax;
-      // keep offsets bounded (in case of long held punch)
       const omax = Math.max(p.width, p.height) * 0.75;
       if (pan.ox >  omax) pan.ox =  omax; else if (pan.ox < -omax) pan.ox = -omax;
       if (pan.oy >  omax) pan.oy =  omax; else if (pan.oy < -omax) pan.oy = -omax;
@@ -370,10 +410,23 @@ export default class VideoMosaicPanelsEffect {
   }
 
   draw(p) {
+    // draw onto the cleared layer (trail)
     const g = this.trail;
     const gap = this.GAP_PX;
 
     g.push();
+    g.colorMode(p.HSL, 360, 100, 100, 255);
+
+    // music-driven tint & size pulse (subtle)
+    const A = this._A;
+    const warmth = clamp01(0.60*A.bands.bass + 0.90*this._kEnv - 0.55*A.bands.treble + 0.20*this._flash);
+    const hue    = (this.HUE_BLUE + (this.HUE_ORANGE - this.HUE_BLUE) * warmth + 360) % 360;
+    const sat    = Math.min(85, 45 + Math.round(40 * clamp01(A.rms + 0.4*this._kEnv)));
+    const lig    = Math.min(75, 58 + Math.round(12 * (1 - A.bands.bass)));
+    const fillA  = Math.round(90 + 70 * clamp01(A.rms + 0.6*this._kEnv));
+    const grow   = Math.min(0.08, 0.05*A.bands.bass + 0.06*this._kEnv + 0.02*A.rms);
+    const jitter = Math.min(2.0, 2.0 * (0.6*this._hEnv + 0.3*A.bands.treble));
+
     g.stroke(this.strokeColor[0], this.strokeColor[1], this.strokeColor[2], this.strokeA);
     g.strokeWeight(this.strokeW);
 
@@ -381,24 +434,32 @@ export default class VideoMosaicPanelsEffect {
       const pan = this.panels[i];
       if (pan.pw <= 0.5 || pan.ph <= 0.5) continue;
 
-      const ox = pan.ox || 0, oy = pan.oy || 0;
+      const ox = (pan.ox || 0);
+      const oy = (pan.oy || 0);
 
-      const x  = pan.x + ox + gap * 0.5;
-      const y  = pan.y + oy + gap * 0.5;
-      const pw = Math.max(0, pan.pw - gap);
-      const ph = Math.max(0, pan.ph - gap);
+      const cx = pan.x + ox + pan.pw * 0.5;
+      const cy = pan.y + oy + pan.ph * 0.5;
+      const pw = pan.pw * (1 + grow);
+      const ph = pan.ph * (1 + grow);
+
+      const x  = cx - pw * 0.5 + gap * 0.5 + (Math.random()*2-1) * jitter;
+      const y  = cy - ph * 0.5 + gap * 0.5 + (Math.random()*2-1) * jitter;
+      const rw = Math.max(0, pw - gap);
+      const rh = Math.max(0, ph - gap);
 
       const a = (pan._alpha ?? 255);
+
+      g.noStroke();
+      g.fill(hue, sat, lig, Math.min(fillA, a));
+      g.rect(x, y, rw, rh, this.panelCorner);
+
       g.noFill();
-      g.fill(this.panelFill[0], this.panelFill[1], this.panelFill[2], Math.min(140, a * 0.55));
-      g.rect(x, y, pw, ph, this.panelCorner);
-      g.noFill();
-      g.stroke(this.strokeColor[0], this.strokeColor[1], this.strokeColor[2], a);
-      g.rect(x, y, pw, ph, this.panelCorner);
+      g.stroke(this.strokeColor[0], this.strokeColor[1], this.strokeColor[2], Math.min(this.strokeA, a));
+      g.rect(x, y, rw, rh, this.panelCorner);
     }
     g.pop();
 
-    p.background(this.bgRgb.r, this.bgRgb.g, this.bgRgb.b);
+    // composite: since layer is already backgrounded, just blit
     p.image(this.trail, 0, 0);
   }
 }
