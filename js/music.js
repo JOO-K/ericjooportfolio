@@ -10,6 +10,8 @@
 //
 // NEW: Publishes window.__AUDIO_BUS for BG audio-reactive effects:
 //   { rms, bands:{bass,mid,treble}, playing, kick, snare, hat }
+//
+// NEW: Mobile guard — player disabled on <= 800px viewports; __AUDIO_BUS stays zeroed.
 
 const MUSIC_BASE = (window.__MUSIC_BASE || './music/').replace(/\/+$/, '') + '/';
 
@@ -27,6 +29,11 @@ const SIZE = {
   barGap: 2,
   kshH: 6,
 };
+
+/* ---------- mobile guard ---------- */
+const MOBILE_MAX_WIDTH = 800;
+const isMobileViewport = () =>
+  (window.innerWidth || document.documentElement.clientWidth || 0) <= MOBILE_MAX_WIDTH;
 
 /* ====== SENSITIVITY CONTROLS ====== */
 const VISUALIZER_SCALE = 0.90;
@@ -342,7 +349,7 @@ function buildUI() {
         height:${heightPx}px; background:rgba(255,255,255,0.22); border-radius:999px; border:none;
       }
       #music-host input[type="range"].${clsName}::-webkit-slider-thumb {
-        -webkit-appearance:none; width:${thumbPx}px}; height:${thumbPx}px;
+        -webkit-appearance:none; width:${thumbPx}px; height:${thumbPx}px;
         border-radius:50%; background:#ffffff; border:none;
         margin-top:${thumbMarginTop}px;
       }
@@ -531,6 +538,25 @@ export async function initMusicPlayer() {
 
   // initialize a default bus so listeners don’t fail before audio starts
   publishAudioBus();
+
+  // --- mobile: do NOT activate player / audio graph ---
+  if (isMobileViewport()) {
+    if (window.__AUDIO_BUS) {
+      window.__AUDIO_BUS.playing = false;
+      window.__AUDIO_BUS.rms = 0;
+      window.__AUDIO_BUS.bands.bass = 0;
+      window.__AUDIO_BUS.bands.mid = 0;
+      window.__AUDIO_BUS.bands.treble = 0;
+      window.__AUDIO_BUS.kick = 0;
+      window.__AUDIO_BUS.snare = 0;
+      window.__AUDIO_BUS.hat = 0;
+    }
+    window.__AUDIO_DISABLED = true; // optional hint for effects
+    return; // ← no UI, no audio context on mobile
+  }
+
+  // --- desktop path ---
+  window.__AUDIO_DISABLED = false;
 
   audio = document.createElement('audio');
   audio.preload = 'auto';
