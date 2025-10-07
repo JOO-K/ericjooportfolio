@@ -214,7 +214,7 @@ function buildPlaylistPanel() {
     left:`${LEFT_PAD}px`,
     width:`${PLAYER_W}px`,
     background:'rgba(14,17,26,0.55)',
-    border:'1px solid rgba(230,232,240,0.14)',
+    border:'0px solid rgba(230,232,240,0.14)',
     borderRadius:'10px',
     backdropFilter:'blur(6px)',
     WebkitBackdropFilter:'blur(6px)',
