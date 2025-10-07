@@ -7,6 +7,9 @@ import VideoConnectedParticlesEffect from './videoparticles.js';
 import VideoBezierOutlineEffect from './videobezier.js';
 import VideoMosaicPanelsEffect from './videomosaic.js';
 import { VideoPlaylist } from './playlist.js';
+// app.js (top)
+import { initMiddleUI } from './middleui.js';
+
 
 // 🔊 music (adds a tiny player; does not change effects)
 import { initMusicPlayer } from './music.js';
@@ -138,6 +141,11 @@ function boot(effectKey = currentKey) {
         });
         window.__musicInitDone = true;
       }
+
+    if (!window.__middleUIReady) {
+  initMiddleUI();            // will no-op if already added
+  window.__middleUIReady = true;
+}
 
       // kick off auto-rotation (only once)
       startAutoRotate();
@@ -563,25 +571,6 @@ function wireDock(joystickCallback) {
   ro.observe(bar);
   window.addEventListener('resize', syncDockSizes, { passive: true });
 
-  // ---- keyboard shortcuts: U/W/D ----
-  const onKey = async (e) => {
-    if (e.repeat) return;
-    const k = (e.key || '').toLowerCase();
-    if (k === 'u') {
-      const input = dock.querySelector('input[type=file]');
-      if (input) input.click();
-    } else if (k === 'w') {
-      userInteracted = true; stopAutoRotate();
-      const ok = await useWebcamAsSource();
-      if (ok) flash(tiny, 'Webcam On');
-      else alert('Webcam not available. Use HTTPS/localhost and allow camera.');
-    } else if (k === 'd') {
-      userInteracted = true; stopAutoRotate();
-      restoreDemoPlaylist();
-      flash(tiny, 'Demo');
-    }
-  };
-  window.addEventListener('keydown', onKey);
 
   // ---- Tap hit-test logger (helps diagnose overlays) ----
   const logTap = (x, y, label) => {

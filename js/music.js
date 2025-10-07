@@ -1,22 +1,17 @@
 // music.js — tiny bottom-left music player (Material Symbols controls + calmer viz + K/S/H)
-// Tweaks: progress bar is thin (3px) and vertical gaps are 11px
-// Updates:
-//  - Progress rail + thumb: same solid gray (no overlap)
-//  - Visualizer: slightly more sensitive to changes
-//  - Drums (K/S/H): much more sensitive + quicker retrigger
+// Publishes window.__AUDIO_BUS and a public window.__MUSIC_API with:
+//   addFiles(files[]), setTrackIndex(i), removeAt(i), getPlaylist(),
+//   on(event, fn), off(event, fn), isReady, isPlaying, play(), toggle(),
+//   seekTo(t), nudge(sec), currentTime, duration
 //
 // NOTE: Paths are GitHub Pages–safe via MUSIC_BASE. To override at runtime, set:
-//   window.__MUSIC_BASE = '/my-site/music/';  // trailing slash optional; we normalize.
-//
-// NEW: Publishes window.__AUDIO_BUS for BG audio-reactive effects:
-//   { rms, bands:{bass,mid,treble}, playing, kick, snare, hat }
-//
-// NEW: Mobile guard — player disabled on <= 800px viewports; __AUDIO_BUS stays zeroed.
+//   window.__MUSIC_BASE = '/my-site/music/';
 
 const MUSIC_BASE = (window.__MUSIC_BASE || './music/').replace(/\/+$/, '') + '/';
 
 /* ---------- small helpers ---------- */
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const mk = (tag, style = {}) => { const el = document.createElement(tag); Object.assign(el.style, style); return el; };
 
 const UI = { text:'#e6e8f0', white:'#ffffff' };
@@ -49,10 +44,12 @@ const DRUM_DECAY = 0.02;
 
 let audio, ctx, sourceNode, analyser, gainNode;
 let dataFreq, dataTime;
-let playlist = [];
+let playlist = [];          // [{id, title, src, kind:'file'|'net'}]
 let trackIdx = 0;
 let isPlaying = false;
 let rafId = 0;
+let _ui = {};               // caches for UI bits used in render
+let _events = {};           // simple event bus
 
 const features = { bands:{}, rms:0, kick:0, snare:0, hat:0 };
 const _prevSubband = { kick:null, snare:null, hat:null };
@@ -60,7 +57,6 @@ const _kshCooldown = { kick:0, snare:0, hat:0 };
 
 /* ---------- AUDIO BUS PUBLISHER ---------- */
 function publishAudioBus() {
-  // Build a stable object (avoid realloc every frame for listeners that keep a ref)
   if (!window.__AUDIO_BUS) window.__AUDIO_BUS = {
     rms: 0, playing: false,
     bands: { bass:0, mid:0, treble:0 },
@@ -104,7 +100,7 @@ function ensureMaterialSymbols() {
   document.head.appendChild(css);
 }
 
-/* ---------- playlist ---------- */
+/* ---------- playlist bootstrap ---------- */
 async function loadPlaylist() {
   try {
     const res = await fetch(MUSIC_BASE + 'manifest.json', { cache:'no-store' });
@@ -112,25 +108,29 @@ async function loadPlaylist() {
       const list = await res.json();
       const out = [];
       for (const item of list) {
-        if (typeof item === 'string') out.push({ file:item, title:item });
-        else if (item && item.file) out.push({ ...item });
+        if (typeof item === 'string') out.push({ id: crypto.randomUUID?.() || String(out.length), file:item, title:item, src:(/^(?:https?:)?\/\//i.test(item)? item : MUSIC_BASE + item), kind:'net' });
+        else if (item && item.file) {
+          const src = /^(?:https?:)?\/\//i.test(item.file) ? item.file : (MUSIC_BASE + item.file);
+          out.push({ id: crypto.randomUUID?.() || String(out.length), title:(item.title||item.file), src, kind:'net' });
+        }
       }
       if (out.length) { playlist = out; return; }
     }
   } catch {}
   try {
     const head = await fetch(MUSIC_BASE + 'default.mp3', { method:'HEAD' });
-    if (head.ok) { playlist = [{ file:'default.mp3', title:'default' }]; return; }
+    if (head.ok) {
+      playlist = [{ id: 'default', title: 'default', src: MUSIC_BASE + 'default.mp3', kind:'net' }];
+      return;
+    }
   } catch {}
-  console.warn('[music] no tracks found. Provide music/manifest.json or music/default.mp3');
+  // no tracks; start empty (upload will fill)
 }
 
-function currentTrackUrl() {
-  const t = playlist[trackIdx]; if (!t) return null;
-  const file = t.file || t.url || '';
-  if (/^(?:https?:)?\/\//i.test(file)) return file;
-  return MUSIC_BASE + file;
-}
+/* ---------- public API (event bus) ---------- */
+function on(evt, fn){ (_events[evt] ||= new Set()).add(fn); }
+function off(evt, fn){ _events[evt]?.delete(fn); }
+function emit(evt, payload){ (_events[evt]||[]).forEach(fn => { try { fn(payload); } catch(_){} }); }
 
 /* ---------- audio graph ---------- */
 async function ensureAudioContext() {
@@ -153,10 +153,14 @@ async function ensureAudioContext() {
   analyser.connect(ctx.destination);
 }
 
+function currentTrack() { return playlist[trackIdx]; }
+
 function loadTrack(autoplay, onTitle) {
-  const url = currentTrackUrl(); if (!url) return;
-  audio.src = url; audio.load();
+  const t = currentTrack();
+  if (!t) { audio.removeAttribute('src'); audio.load(); return; }
+  audio.src = t.src; audio.load();
   onTitle?.();
+  emit('titlechange', { title: t.title || '' });
   if (autoplay) {
     const go = () => audio.play().catch(()=>{});
     if (ctx && ctx.state === 'suspended') ctx.resume().then(go); else go();
@@ -264,7 +268,7 @@ function buildUI() {
   ensureMaterialSymbols();
 
   const host = mk('div', {
-    position:'fixed', left:`${SIZE.leftPad}px`, bottom:'16px', zIndex:'99991',
+    position:'fixed', left:`${SIZE.leftPad}px`, bottom:'16px', zIndex:'900',
     display:'flex', flexDirection:'column', gap:`${SIZE.gapY}px`,
     color:UI.text, userSelect:'none',
     fontFamily:'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace',
@@ -283,7 +287,8 @@ function buildUI() {
   const vizBox = mk('div', { width:'100%', pointerEvents:'none', boxSizing:'border-box' });
 
   const barsWrap = mk('div', { position:'relative', width:'100%', height:`${SIZE.vizH}px` });
-  const bars = [], caps = [];
+  const bars = [];   // create ONCE
+  const caps = [];
   const bandCount = 24;
 
   const gapsTotal = SIZE.barGap * (bandCount - 1);
@@ -310,6 +315,17 @@ function buildUI() {
     bars.push(bar); caps.push(cap);
   }
 
+  vizBox.appendChild(barsWrap);
+
+  // save onto _ui for reuse in render
+  _ui.barsWrap = barsWrap;
+  _ui.bars = bars;
+  _ui.caps = caps;
+  _ui.bandEdges = buildBandEdges(bandCount);
+  _ui.capsPeak = new Array(bandCount).fill(0);
+  _ui.capsHold = new Array(bandCount).fill(0);
+
+  // --- K/S/H meters ---
   const kshWrap = mk('div', {
     display:'grid', gridTemplateColumns:'1fr 1fr 1fr', alignItems:'center',
     gap:'6px', width:'100%', height:`${SIZE.kshH + 4}px`, marginTop:'4px'
@@ -322,7 +338,6 @@ function buildUI() {
   const k = mkMeter(), s = mkMeter(), h = mkMeter();
   kshWrap.appendChild(k.box); kshWrap.appendChild(s.box); kshWrap.appendChild(h.box);
 
-  vizBox.appendChild(barsWrap);
   vizBox.appendChild(kshWrap);
 
   // --- sliders ---
@@ -366,7 +381,7 @@ function buildUI() {
     return { rail, input };
   }
 
-  // progress (height 3px — thin)
+  // progress (thin)
   const { rail:progRail, input:prog } = makeRailRange(3, SIZE.dot - 4, 'progress', 'music-prog');
   prog.min='0'; prog.max='1'; prog.step='0.001'; prog.value='0';
 
@@ -438,21 +453,26 @@ function buildUI() {
 
   /* ----- wiring ----- */
   const updateTitle = () => {
-    const t = playlist[trackIdx];
-    titleInner.textContent = t ? (t.title || t.file || '') : '';
+    const t = currentTrack();
+    const txt = t ? (t.title || '') : '';
+    titleInner.textContent = txt;
     titleInner.style.animation = 'none'; void titleInner.offsetWidth;
     titleInner.style.animation = 'music-marquee 10s linear infinite';
+    emit('titlechange', { title: txt });
   };
+  _ui.updateTitle = updateTitle;
 
   prevBtn.addEventListener('click', () => {
     if (!playlist.length) return;
     trackIdx = (trackIdx - 1 + playlist.length) % playlist.length;
     const auto = isPlaying; loadTrack(auto, updateTitle);
+    notifyPlaylist();
   });
   nextBtn.addEventListener('click', () => {
     if (!playlist.length) return;
     trackIdx = (trackIdx + 1) % playlist.length;
     const auto = isPlaying; loadTrack(auto, updateTitle);
+    notifyPlaylist();
   });
   playBtn.addEventListener('click', async () => {
     await ensureAudioContext();
@@ -466,7 +486,8 @@ function buildUI() {
       isPlaying = false;
       if (playBtn._iconSpan) playBtn._iconSpan.textContent = 'play_arrow';
     }
-    publishAudioBus(); // keep playing flag in sync immediately
+    publishAudioBus();
+    emit('state', { playing: isPlaying });
   });
   vol.addEventListener('input', () => { if (gainNode) gainNode.gain.value = Number(vol.value); });
 
@@ -481,18 +502,22 @@ function buildUI() {
   });
 
   /* ----- render loop ----- */
-  const bandEdges = buildBandEdges(bandCount);
-  const capsPeak = new Array(bandCount).fill(0);
-  const capsHold = new Array(bandCount).fill(0);
+  const capsPeak = _ui.capsPeak;
+  const capsHold = _ui.capsHold;
+  const bandEdges = _ui.bandEdges;
+
+  const barsRef = _ui.bars; // reuse
+  const capsRef = _ui.caps;
+
   const PEAK_HOLD_MS = 160;
   const PEAK_FALL = 0.05;
 
   function frame() {
     if (analyser && !audio.paused && !audio.ended) {
       updateFeatures();
-      publishAudioBus(); // <<<<<< publish metrics every frame
+      publishAudioBus();
 
-      for (let i=0;i<bandCount;i++){
+      for (let i=0;i<bandEdges.length-1;i++){
         const lo = bandEdges[i], hi = bandEdges[i+1];
         let v = subbandEnergyWeighted(lo, hi);
         const center = Math.sqrt(lo * hi);
@@ -503,15 +528,15 @@ function buildUI() {
         const HEADROOM = 0.85;
         const h = Math.round(2 + vScaled * (SIZE.vizH - 6) * HEADROOM);
 
-        bars[i].style.height = `${h}px`;
-        bars[i].style.opacity = String(0.45 + vScaled * 0.5);
+        barsRef[i].style.height = `${h}px`;
+        barsRef[i].style.opacity = String(0.45 + vScaled * 0.5);
 
         const now = performance.now();
         if (vScaled > capsPeak[i]) { capsPeak[i]=vScaled; capsHold[i]=now+PEAK_HOLD_MS; }
         else if (now > capsHold[i]) { capsPeak[i] = Math.max(0, capsPeak[i]-PEAK_FALL); }
 
         const capH = Math.round(2 + capsPeak[i]*(SIZE.vizH - 6) * HEADROOM);
-        caps[i].style.bottom = Math.max(capH - 2, 0) + 'px';
+        capsRef[i].style.bottom = Math.max(capH - 2, 0) + 'px';
       }
 
       // K/S/H meters
@@ -522,14 +547,13 @@ function buildUI() {
       s.fill.style.width = `${sW}%`;
       h.fill.style.width = `${hW}%`;
     } else {
-      // still keep bus's playing flag honest while paused
       publishAudioBus();
     }
     rafId = requestAnimationFrame(frame);
   }
   rafId = requestAnimationFrame(frame);
 
-  return { updateTitle, playBtn };
+  return { updateTitle, playBtn, host };
 }
 
 /* ---------- public init ---------- */
@@ -539,7 +563,7 @@ export async function initMusicPlayer() {
   // initialize a default bus so listeners don’t fail before audio starts
   publishAudioBus();
 
-  // --- mobile: do NOT activate player / audio graph ---
+  // Mobile guard: disable UI + graph on small viewports
   if (isMobileViewport()) {
     if (window.__AUDIO_BUS) {
       window.__AUDIO_BUS.playing = false;
@@ -551,11 +575,12 @@ export async function initMusicPlayer() {
       window.__AUDIO_BUS.snare = 0;
       window.__AUDIO_BUS.hat = 0;
     }
-    window.__AUDIO_DISABLED = true; // optional hint for effects
-    return; // ← no UI, no audio context on mobile
+    window.__AUDIO_DISABLED = true;
+    // Still expose a stub API for middleui
+    buildAPI(true);
+    return;
   }
 
-  // --- desktop path ---
   window.__AUDIO_DISABLED = false;
 
   audio = document.createElement('audio');
@@ -572,26 +597,129 @@ export async function initMusicPlayer() {
     isPlaying = true;
     if (playBtn && playBtn._iconSpan) playBtn._iconSpan.textContent = 'pause';
     publishAudioBus();
+    emit('state', { playing: isPlaying });
   });
   audio.addEventListener('pause', () => {
     isPlaying = false;
     if (playBtn && playBtn._iconSpan) playBtn._iconSpan.textContent = 'play_arrow';
     publishAudioBus();
+    emit('state', { playing: isPlaying });
   });
   audio.addEventListener('ended', () => {
     if (!playlist.length) return;
     trackIdx = (trackIdx + 1) % playlist.length;
-    loadTrack(true, updateTitle);
+    loadTrack(true, _ui.updateTitle);
+    notifyPlaylist();
   });
 
   window.addEventListener('beforeunload', () => {
     try { cancelAnimationFrame(rafId); } catch {}
     try { audio.pause(); } catch {}
     try { ctx && ctx.close && ctx.close(); } catch {}
-    // Mark not playing on unload
     isPlaying = false;
     publishAudioBus();
   });
+
+  buildAPI(false);
 }
 
+/* ---------- API & helpers used by middleui ---------- */
+
+function notifyPlaylist(){
+  const api = window.__MUSIC_API;
+  if (!api) return;
+  emit('playlistchange', { items: api.getPlaylist ? api.getPlaylist() : [] });
+}
+
+function buildAPI(isStub){
+  const api = {
+    get isReady(){ return !!audio; },
+    get isPlaying(){ return !!isPlaying; },
+    play: () => audio?.play?.().catch(()=>{}),
+    toggle: async () => {
+      await ensureAudioContext();
+      if (!audio) return;
+      if (audio.paused) { await audio.play().catch(()=>{}); }
+      else { audio.pause(); }
+    },
+    seekTo: (t) => {
+      if (!audio || !isFinite(t)) return;
+      const d = audio.duration || 0;
+      if (d > 0) audio.currentTime = clamp(t, 0, d);
+    },
+    nudge: (sec) => {
+      if (!audio || !isFinite(sec)) return;
+      const d = audio.duration || 0;
+      if (d > 0) audio.currentTime = clamp((audio.currentTime||0) + sec, 0, d);
+    },
+    get currentTime(){ return audio?.currentTime || 0; },
+    get duration(){ return audio?.duration || 0; },
+
+    addFiles: (files=[]) => {
+      // append uploaded files to playlist
+      const added = [];
+      for (const f of files) {
+        if (!f || !/audio\//i.test(f.type || '') && !/\.(mp3|wav|ogg|m4a|aac)$/i.test(f.name||'')) continue;
+        const url = URL.createObjectURL(f);
+        added.push({
+          id: crypto.randomUUID?.() || (Date.now() + '_' + Math.random().toString(36).slice(2)),
+          title: f.name || 'upload',
+          src: url,
+          kind: 'file',
+          _blob: url
+        });
+      }
+      if (!added.length) return;
+
+      const hadNone = playlist.length === 0;
+      playlist.push(...added);
+
+      if (hadNone) {
+        trackIdx = 0;
+        loadTrack(true, _ui.updateTitle);
+      } else {
+        // don’t switch track; just notify
+        notifyPlaylist();
+      }
+    },
+
+    setTrackIndex: (i) => {
+      if (!playlist.length) return;
+      trackIdx = Math.max(0, Math.min(playlist.length-1, i|0));
+      loadTrack(true, _ui.updateTitle);
+      notifyPlaylist();
+    },
+
+    removeAt: (i) => {
+      if (i<0 || i>=playlist.length) return;
+      // revoke blobs if any
+      const it = playlist[i];
+      if (it && it.kind==='file' && it._blob) { try { URL.revokeObjectURL(it._blob); } catch {} }
+
+      playlist.splice(i,1);
+
+      if (trackIdx >= playlist.length) trackIdx = Math.max(0, playlist.length-1);
+      if (playlist.length) {
+        loadTrack(false, _ui.updateTitle);
+      } else {
+        // empty
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+        isPlaying = false;
+        publishAudioBus();
+        emit('state', { playing: isPlaying });
+      }
+      notifyPlaylist();
+    },
+
+    getPlaylist: () => playlist.map(({id,title,src}) => ({ id, title, src })),
+
+    on, off,
+    _emit: emit
+  };
+  window.__MUSIC_API = api;
+}
+
+/* ---------- default export ---------- */
 export default initMusicPlayer;

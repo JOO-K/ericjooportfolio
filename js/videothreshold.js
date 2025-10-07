@@ -13,7 +13,7 @@ import { VideoPlaylist } from './playlist.js';
 function lerp(a, b, t) { return a + (b - a) * Math.max(0, Math.min(1, t)); }
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
-/* ---------- Inline Kaleidoscope Perlin BG (per-ring personalities) ---------- */
+/* ---------- Inline Kaleidoscope Perlin BG (heavily randomized per-load) ---------- */
 class InlineVoronoiBG {
   constructor() {
     this.hasC2 = !!window.c2;
@@ -21,43 +21,130 @@ class InlineVoronoiBG {
     this.renderer = null;
     this.perlin = null;
 
-    // fade based on audio activity
+    // audio fade
     this.alpha = 0;
     this.fadeSlew = 0.16;
 
     // time
     this._t = 0;
 
-    // symmetry & layout
-    this.petals = 8;        // radial symmetry sectors
-    this.ringsBase = 13;    // concentric lines (breathes with audio)
-    this.samples = 240;     // samples per ring (smoothness)
-    this.innerFrac = 0.06;  // inner radius as % of min(W,H)
-    this.outerFrac = 0.95;  // outer radius as % of min(W,H)
+    // defaults (will be overridden in _initRandom)
+    this.petals    = 8;
+    this.ringsBase = 13;
+    this.samples   = 240;
+    this.innerFrac = 0.06;
+    this.outerFrac = 0.95;
 
-    // stroke look
-    this.strokeBase = 0.65;   // thin baseline
-    this.strokeKick = 1.6;    // max on big kick
-    this.strokeColor = '#9aa0a6';
+    // stroke look (will randomize)
+    this.strokeBase = 0.65;
+    this.strokeKick = 1.6;
 
-    // drum envelopes
+    // per-load randomness
+    this._seed = 0;
+    this._rndReady = false;
+
+    // fold + hue + perlin domain/random
+    this._foldType = 'mirror';   // 'mirror' | 'wrap' | 'star'
+    this._baseRot  = 0;
+    this._nxOff = 0; this._nyOff = 0;
+    this._freqBias = 1.0;
+
+    this._palette = 'cool';      // 'cool' | 'warm' | 'mono'
+    this._hueBias = 0;           // ±40°
+    this._satBias = 0;           // -20..+20
+    this._lightBias = 0;         // -8..+8
+
+    this._dashPolicy = 'hats';   // 'none' | 'hats' | 'sporadic'
+
+    // ring personality source: shuffled start + per-ring noise
+    this._ringModeStart = 0;
+    this._ringNoise = 0.0;
+
+    // drums
     this._prevK = 0; this._prevS = 0; this._prevH = 0;
-    this.kickImpulse  = 0; // fast pop
-    this.snareImpulse = 0; // rotation jitter
-    this.hatImpulse   = 0; // micro shimmer
+    this.kickImpulse  = 0;
+    this.snareImpulse = 0;
+    this.hatImpulse   = 0;
+  }
+
+  /* ---------- seed helpers ---------- */
+  _seedFromEnv() {
+    if (typeof window !== 'undefined' && window.KALEIDO_SEED != null) {
+      return Number(window.KALEIDO_SEED) | 0;
+    }
+    if (window.crypto?.getRandomValues) {
+      const a = new Uint32Array(1);
+      window.crypto.getRandomValues(a);
+      return a[0] | 0;
+    }
+    // fallback: time + UA hash + Math.random
+    let s = (Date.now() ^ (performance?.now() || 0)) | 0;
+    const ua = (navigator?.userAgent || '') + Math.random();
+    for (let i = 0; i < ua.length; i++) s = ((s << 5) - s + ua.charCodeAt(i)) | 0;
+    return s | 0;
+  }
+  _rand(){ let x = this._seed |= 0; x ^= x<<13; x ^= x>>>17; x ^= x<<5; this._seed = x; return ((x>>>0)/4294967296); }
+  _r(a,b){ return a + (b-a)*this._rand(); }
+  _pick(arr){ return arr[Math.floor(this._rand()*arr.length)] }
+  _pickW(items, weights){ let t=weights.reduce((a,b)=>a+b,0), r=this._rand()*t; for(let i=0;i<items.length;i++){ r-=weights[i]; if(r<=0) return items[i]; } return items[items.length-1]; }
+
+  _initRandom() {
+    if (this._rndReady) return;
+    this._seed = this._seedFromEnv();
+
+    // petals: 5–14 (weight to 8–12 for pleasing symmetry)
+    this.petals = this._pickW(
+      [5,6,7,8,9,10,11,12,13,14],
+      [1,2,1,4,3,4,3,4,1,1]
+    );
+
+    // rings + density + extents
+    this.ringsBase = Math.round(this._r(9, 18));
+    this.samples   = Math.round(this._r(160, 360));
+    this.innerFrac = this._r(0.03, 0.14);
+    this.outerFrac = this._r(0.86, 0.99);
+
+    // perlin detail/seed + domain offsets + frequency bias
+    const octaves = Math.floor(this._r(2, 5));
+    const gain    = this._r(0.38, 0.65);
+    this._perlinDetail = { octaves, gain };
+    this._perlinSeed   = (this._r(0, 1e9) | 0);
+    this._nxOff  = this._r(-20, 20);
+    this._nyOff  = this._r(-20, 20);
+    this._freqBias = this._r(0.65, 1.35);
+
+    // base rotation
+    this._baseRot = this._r(0, Math.PI*2);
+
+    // folding style
+    this._foldType = this._pickW(['mirror','wrap','star'], [5,3,2]);
+
+    // stroke behavior
+    this.strokeBase = this._r(0.40, 0.90);
+    this.strokeKick = this._r(1.2, 2.2);
+
+    // dash policy
+    this._dashPolicy = this._pickW(['none','hats','sporadic'], [2,5,3]);
+
+    // hue palette
+    this._palette = this._pickW(['cool','warm','mono'], [5,3,2]);
+    this._hueBias   = this._r(-40, 40);
+    this._satBias   = this._r(-20, 20);
+    this._lightBias = this._r(-8, 8);
+
+    // ring personalities: randomized start & noise driver
+    this._ringModeStart = Math.floor(this._r(0, 3)); // 0..2
+    this._ringNoise = this._r(0.08, 0.28);
+
+    this._rndReady = true;
   }
 
   _bus() {
     const b = window.__AUDIO_BUS || {};
-    const clamp = (v) => Math.max(0, Math.min(1, v ?? 0));
+    const c = v=>Math.max(0, Math.min(1, v ?? 0));
     return {
-      rms:   clamp(b.rms),
-      bass:  clamp(b.bands?.bass),
-      mid:   clamp(b.bands?.mid),
-      treb:  clamp(b.bands?.treble),
-      k:     clamp(b.kick),
-      s:     clamp(b.snare),
-      h:     clamp(b.hat),
+      rms:c(b.rms), bass:c(b.bands?.bass), mid:c(b.bands?.mid), treb:c(b.bands?.treble),
+      k:c(b.kick), s:c(b.snare), h:c(b.hat),
     };
   }
 
@@ -66,204 +153,215 @@ class InlineVoronoiBG {
     const c2 = window.c2;
     if (!this.canvas) {
       this.canvas = document.createElement('canvas');
-      this.canvas.width  = Math.max(1, p.width | 0);
-      this.canvas.height = Math.max(1, p.height | 0);
+      this.canvas.width  = Math.max(1, p.width|0);
+      this.canvas.height = Math.max(1, p.height|0);
     }
     if (!this.renderer) {
       this.renderer = new c2.Renderer(this.canvas);
       this.renderer.background(false);
       this.perlin = new c2.Perlin();
-      this.perlin.detail(3, 0.5);
+      this._initRandom();
+      // apply randomized perlin config
+      try { this.perlin.detail(this._perlinDetail.octaves, this._perlinDetail.gain); } catch {}
+      try { this.perlin.seed?.(this._perlinSeed); } catch {}
     }
     return true;
   }
 
-  setup(p) { this._ensureInit(p); }
-  resize(p) {
+  setup(p){ this._ensureInit(p); }
+  resize(p){
     if (!this._ensureInit(p)) return;
-    this.canvas.width  = Math.max(1, p.width | 0);
-    this.canvas.height = Math.max(1, p.height | 0);
+    this.canvas.width  = Math.max(1, p.width|0);
+    this.canvas.height = Math.max(1, p.height|0);
     this.renderer.size(this.canvas.width, this.canvas.height);
+    // no re-seed on resize (keeps the “session look”)
   }
 
-  _updateDrums(bus) {
-    // edge-detect
-    if (bus.k > 0.6 && this._prevK <= 0.6) this.kickImpulse = 1.0;
-    if (bus.s > 0.55 && this._prevS <= 0.55) this.snareImpulse = 1.0;
-    if (bus.h > 0.50 && this._prevH <= 0.50) this.hatImpulse = 1.0;
-
-    // decay
-    this.kickImpulse  *= 0.90;
-    this.snareImpulse *= 0.90;
-    this.hatImpulse   *= 0.92;
-
-    this._prevK = bus.k; this._prevS = bus.s; this._prevH = bus.h;
+  _updateDrums(bus){
+    if (bus.k>0.6 && this._prevK<=0.6) this.kickImpulse=1.0;
+    if (bus.s>0.55&& this._prevS<=0.55) this.snareImpulse=1.0;
+    if (bus.h>0.50&& this._prevH<=0.50) this.hatImpulse=1.0;
+    this.kickImpulse*=0.90; this.snareImpulse*=0.90; this.hatImpulse*=0.92;
+    this._prevK=bus.k; this._prevS=bus.s; this._prevH=bus.h;
   }
 
-  update(p, dt) {
+  // folding variants
+  _foldAngle(ang, sector){
+    if (this._foldType === 'mirror') {
+      const aIn = ang % sector;
+      const aFold = (aIn <= sector*0.5) ? aIn : (sector - aIn);
+      return Math.floor(ang/sector)*sector + aFold;
+    } else if (this._foldType === 'wrap') {
+      // simple wrap (no mirror) for a star-wheel vibe
+      const aIn = ang % sector;
+      return Math.floor(ang/sector)*sector + aIn;
+    } else { // 'star' – mirror but also alternate a slight offset every other sector
+      const idx = Math.floor(ang/sector);
+      const aIn = ang % sector;
+      const aFold = (aIn <= sector*0.5) ? aIn : (sector - aIn);
+      const offset = (idx % 2 === 0) ? 0.0 : sector*0.08;
+      return idx*sector + Math.max(0, Math.min(sector*0.5, aFold + offset));
+    }
+  }
+
+  update(p, dt){
     if (!this._ensureInit(p)) return;
 
     const bus = this._bus();
     const dtC = Math.max(0.016, dt || 0.016);
 
-    // fade in/out based on activity
-    const alive = (bus.rms > 0.02);
-    this.alpha += ((alive ? 1 : 0) - this.alpha) * this.fadeSlew;
+    // audio fade gate
+    const alive = bus.rms > 0.02;
+    this.alpha += ((alive?1:0) - this.alpha) * this.fadeSlew;
     if (this.alpha < 0.01) return;
 
     this._updateDrums(bus);
 
-    // drive time by bass + treble
+    // time speed
     const baseSpeed = 0.10;
-    const speed = baseSpeed * (1.0 + 1.4 * bus.bass + 0.35 * bus.treb);
+    const speed = baseSpeed * (1.0 + 1.4*bus.bass + 0.35*bus.treb);
     this._t += dtC * speed * 60;
 
     // canvas metrics
     const W = this.canvas.width, H = this.canvas.height;
-    const cx = W * 0.5, cy = H * 0.5;
-    const Rmin = Math.min(W, H) * this.innerFrac;
-    const Rmax = Math.min(W, H) * this.outerFrac;
+    const cx = W*0.5, cy = H*0.5;
+    const Rmin = Math.min(W,H)*this.innerFrac;
+    const Rmax = Math.min(W,H)*this.outerFrac;
 
-    // dynamic ring count with audio
-    const rings = Math.max(8, Math.round(this.ringsBase + 6 * (bus.rms + 0.35 * bus.mid)));
+    // dynamic ring count
+    const rings = Math.max(8, Math.round(this.ringsBase + 6*(bus.rms + 0.35*bus.mid)));
 
-    // overall amplitude budget (how wiggly radii are)
-    const ampBase  = 0.05 * Rmax;
-    const ampAudio = (0.28 * bus.bass + 0.14 * bus.mid + 0.18 * this.kickImpulse) * Rmax;
+    // amplitude budget
+    const ampBase  = 0.05*Rmax;
+    const ampAudio = (0.28*bus.bass + 0.14*bus.mid + 0.18*this.kickImpulse)*Rmax;
 
-    // global rotation wobble (snare) + micro shimmer (hat)
-    const wobble = (this.perlin.noise(this._t * 0.03, 0.17) - 0.5) * (0.06 + 0.20 * this.snareImpulse);
+    // wobble
+    const wobble = (this.perlin.noise(this._t*0.03, 0.17)-0.5) * (0.06 + 0.20*this.snareImpulse);
 
-    // draw
     this.renderer.clear();
-    this.renderer.fill(false); // stroke only
+    this.renderer.fill(false);
 
-    const TWO_PI = Math.PI * 2;
+    const TWO_PI = Math.PI*2;
     const sector = TWO_PI / this.petals;
 
-    for (let i = 0; i < rings; i++) {
-      const tRing = i / Math.max(1, rings - 1);
-      const rBase = c2.map(i, 0, rings - 1, Rmin, Rmax);
+    for (let i=0;i<rings;i++){
+      const tRing = i / Math.max(1, rings-1);
+      const rBase = c2.map(i,0,rings-1,Rmin,Rmax);
 
-      // choose a mode per ring
-      const mode = i % 3; // 0=A (oscilloscope), 1=B (terrain), 2=C (kick ripples)
+      // per-ring mode chosen from shuffled start + noise
+      const mNoise = this.perlin.noise(i*this._ringNoise + 100.123, this._t*0.01);
+      const mode = (this._ringModeStart + Math.round(mNoise*4)) % 3; // 0..2 but biased by noise
 
-      // per-ring params
+      // per-ring params (with per-load freq bias)
       let perlinGain, perlinFreq, shimmerGain, kickPulseGain, kickPulseFreq, hueShift, dashOnHat;
       if (mode === 0) {
-        // inner oscilloscope: fast shimmer, lighter Perlin
-        perlinGain = 0.45;  perlinFreq = 1.15;
-        shimmerGain = 1.0 + 0.8 * (bus.h + 0.35 * this.hatImpulse);
+        perlinGain = 0.45;  perlinFreq = 1.15 * this._freqBias;
+        shimmerGain = 1.0 + 0.8*(bus.h + 0.35*this.hatImpulse);
         kickPulseGain = 0.12; kickPulseFreq = 0.9;
         hueShift = -4; dashOnHat = false;
       } else if (mode === 1) {
-        // mid terrain: big Perlin, slow shimmer
-        perlinGain = 1.25;  perlinFreq = 0.85;
-        shimmerGain = 0.45 + 0.35 * (bus.h + 0.25 * this.snareImpulse);
+        perlinGain = 1.25;  perlinFreq = 0.85 * this._freqBias;
+        shimmerGain = 0.45 + 0.35*(bus.h + 0.25*this.snareImpulse);
         kickPulseGain = 0.18; kickPulseFreq = 0.7;
-        hueShift = 0; dashOnHat = false;
+        hueShift = 0;   dashOnHat = (this._dashPolicy === 'sporadic');
       } else {
-        // outer kick ripples: radial pulses, medium Perlin, optional dash on hats
-        perlinGain = 0.85;  perlinFreq = 1.0;
-        shimmerGain = 0.60 + 0.5 * (bus.h + 0.25 * this.snareImpulse);
+        perlinGain = 0.85;  perlinFreq = 1.00 * this._freqBias;
+        shimmerGain = 0.60 + 0.5*(bus.h + 0.25*this.snareImpulse);
         kickPulseGain = 0.35; kickPulseFreq = 1.20;
-        hueShift = +6; dashOnHat = true;
+        hueShift = +6; dashOnHat = (this._dashPolicy !== 'none');
       }
 
-      // stroke width with kick pop (accent outer rings slightly)
-      const pop = (0.35 + 0.65 * tRing) * this.kickImpulse;
+      const pop = (0.35 + 0.65*tRing) * this.kickImpulse;
       const lineW = Math.min(this.strokeKick, this.strokeBase + pop);
       this.renderer.lineWidth(lineW);
 
-      // subtle per-ring color variation (treble shifts hue)
-      const hue = 210 + hueShift + 10 * bus.treb;
-      const sat = 10 + Math.round(14 * (0.35 + 0.65 * bus.treb));
-      const light = Math.round(46 + (1 - tRing) * 16);
-      this.renderer.stroke(window.c2.Color.hsl(hue, sat, light));
+      // palette
+      let baseHue = 210; // cool anchor
+      let satBase = 10;
+      let lightBase = 46;
+      if (this._palette === 'warm') baseHue = 28;
+      if (this._palette === 'mono') { satBase = 0; }
+      const hue = baseHue + this._hueBias + hueShift + 10*bus.treb;
+      const sat = Math.max(0, Math.min(100, satBase + Math.round(14*(0.35+0.65*bus.treb)) + this._satBias));
+      const light = Math.max(0, Math.min(100, Math.round(lightBase + (1 - tRing)*16 + this._lightBias)));
+      this.renderer.stroke(window.c2.Color.hsl((hue%360+360)%360, sat, light));
 
-      // hat dashes (only on mode C and only when hats are lively)
-      if (dashOnHat && this.renderer.lineDash) {
-        if (bus.h + this.hatImpulse > 0.35) {
-          const dashLen = 6 + Math.round(12 * (bus.h + 0.5 * this.hatImpulse));
-          const gapLen  = 4 + Math.round(10 * (bus.h + 0.5 * this.hatImpulse));
+      // dash
+      if (this.renderer.lineDash) {
+        if (dashOnHat && (bus.h + this.hatImpulse > 0.35)) {
+          const dashLen = 6 + Math.round(12 * (bus.h + 0.5*this.hatImpulse));
+          const gapLen  = 4 + Math.round(10 * (bus.h + 0.5*this.hatImpulse));
           this.renderer.lineDash([dashLen, gapLen]);
+        } else if (this._dashPolicy === 'sporadic' && this._rand() < 0.12) {
+          this.renderer.lineDash([8 + Math.floor(this._rand()*10), 6 + Math.floor(this._rand()*8)]);
         } else {
-          this.renderer.lineDash([]); // solid
+          this.renderer.lineDash([]);
         }
-      } else if (this.renderer.lineDash) {
-        this.renderer.lineDash([]); // ensure solid for other modes
       }
 
-      // ring-specific Perlin amplitude (outer = more hills)
       const amp = (ampBase + ampAudio) * Math.pow(tRing, 0.75) * perlinGain;
-
-      // slight per-ring rotation (wobble + per-mode offset)
-      const rot = wobble + (mode - 1) * 0.03 * (0.4 + 0.6 * bus.treb);
+      const rot = this._baseRot + wobble + (mode - 1)*0.03*(0.4+0.6*bus.treb);
 
       this.renderer.beginPath();
 
-      for (let j = 0; j < this.samples; j++) {
-        const t = j / (this.samples - 1);
-        let ang = t * TWO_PI + rot;
+      for (let j=0;j<this.samples;j++){
+        const t = j/(this.samples-1);
+        let ang = t*TWO_PI + rot;
 
-        // kaleidoscope folding
-        const aIn = ang % sector;
-        const aFold = (aIn <= sector * 0.5) ? aIn : (sector - aIn);
-        const aOut = Math.floor(ang / sector) * sector + aFold;
+        // fold
+        const aOut = this._foldAngle(ang, sector);
 
-        // perlin domain (scaled by perlinFreq)
-        const nx = 0.035 * this._t + Math.cos(aOut) * 0.35 * perlinFreq + i * 0.041;
-        const ny = 0.035 * this._t + Math.sin(aOut) * 0.35 * perlinFreq - i * 0.033;
+        // perlin domain with offsets
+        const nx = this._nxOff + 0.035*this._t + Math.cos(aOut)*0.35*perlinFreq + i*0.041;
+        const ny = this._nyOff + 0.035*this._t + Math.sin(aOut)*0.35*perlinFreq - i*0.033;
 
-        // base radius + Perlin hills
         let r = rBase + (this.perlin.noise(nx, ny) - 0.5) * amp;
 
-        // micro “oscilloscope” ripple (hats/snare)
-        r += Math.sin(this._t * 0.04 * (1 + 14 * (bus.h + 0.4 * this.hatImpulse)) + j * 0.22 + i * 0.35)
-           * (2 + 8 * shimmerGain);
+        // shimmer
+        r += Math.sin(this._t*0.04*(1 + 14*(bus.h + 0.4*this.hatImpulse)) + j*0.22 + i*0.35)
+           * (2 + 8*shimmerGain);
 
-        // kick-driven radial pulse (mode C pops harder)
+        // kick pulse
         const kp = kickPulseGain * this.kickImpulse;
         if (kp > 0.001) {
-          r += Math.sin(this._t * 0.10 * (kickPulseFreq * (1 + 2.0 * this.kickImpulse)) + t * TWO_PI * 2.0) * (6 + 38 * kp);
+          r += Math.sin(this._t*0.10*(kickPulseFreq*(1 + 2.0*this.kickImpulse)) + t*TWO_PI*2.0) * (6 + 38*kp);
         }
 
-        // clamp radius
-        r = Math.max(Rmin * 0.9, Math.min(Rmax, r));
+        // clamp
+        r = Math.max(Rmin*0.9, Math.min(Rmax, r));
+        const x = cx + Math.cos(aOut)*r;
+        const y = cy + Math.sin(aOut)*r;
 
-        const x = cx + Math.cos(aOut) * r;
-        const y = cy + Math.sin(aOut) * r;
-
-        if (j === 0 && this.renderer.moveTo) this.renderer.moveTo(x, y);
-        else this.renderer.lineTo(x, y);
+        if (j===0 && this.renderer.moveTo) this.renderer.moveTo(x,y);
+        else this.renderer.lineTo(x,y);
       }
 
-      this.renderer.endPath(false); // stroke only
+      this.renderer.endPath(false);
     }
 
-    // (optional) tiny center burst on big kicks
+    // center burst
     if (this.kickImpulse > 0.28) {
-      const lw = Math.min(this.strokeKick, this.strokeBase + this.kickImpulse * 1.3);
+      const lw = Math.min(this.strokeKick, this.strokeBase + this.kickImpulse*1.3);
       this.renderer.lineWidth(lw);
       if (this.renderer.lineDash) this.renderer.lineDash([]);
       const spokes = this.petals * 2;
-      const Rmin = Math.min(W, H) * this.innerFrac;
-      const Rmax = Math.min(W, H) * this.outerFrac;
-      for (let s = 0; s < spokes; s++) {
-        const a = (s / spokes) * TWO_PI + wobble * 0.6;
-        const x0 = cx + Math.cos(a) * (Rmin * 0.95);
-        const y0 = cy + Math.sin(a) * (Rmin * 0.95);
-        const x1 = cx + Math.cos(a) * (Rmin + 0.18 * (Rmax - Rmin) * this.kickImpulse);
-        const y1 = cy + Math.sin(a) * (Rmin + 0.18 * (Rmax - Rmin) * this.kickImpulse);
+      const Rmin2 = Math.min(W,H)*this.innerFrac;
+      const Rmax2 = Math.min(W,H)*this.outerFrac;
+      for (let s=0;s<spokes;s++){
+        const a = (s/spokes)*TWO_PI + (wobble*0.6 + this._baseRot);
+        const x0 = cx + Math.cos(a)*(Rmin2*0.95);
+        const y0 = cy + Math.sin(a)*(Rmin2*0.95);
+        const x1 = cx + Math.cos(a)*(Rmin2 + 0.18*(Rmax2 - Rmin2)*this.kickImpulse);
+        const y1 = cy + Math.sin(a)*(Rmin2 + 0.18*(Rmax2 - Rmin2)*this.kickImpulse);
         this.renderer.beginPath();
-        this.renderer.lineTo(x0, y0);
-        this.renderer.lineTo(x1, y1);
+        this.renderer.lineTo(x0,y0);
+        this.renderer.lineTo(x1,y1);
         this.renderer.endPath(false);
       }
     }
   }
 
-  draw(p) {
+  draw(p){
     if (!this.hasC2 || !this.canvas || this.alpha < 0.01) return;
     p.push();
     try {
@@ -275,6 +373,7 @@ class InlineVoronoiBG {
     p.pop();
   }
 }
+
 
 
 /* ========================================================================== */
