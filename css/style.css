@@ -8,6 +8,11 @@
   src: url(../fonts/ReplicaLL-Light.otf);
 }
 
+@font-face {
+  font-family: Bookish;
+  src: url(../fonts/Bookish.otf);
+}
+
 html,
 body {
   margin: 0;

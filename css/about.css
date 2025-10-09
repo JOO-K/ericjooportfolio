@@ -1,9 +1,64 @@
 .about-wrapper{
     position:absolute;
-    top: 200px;
-    left: 35px;
+    top: 250px;
+    left: 0px;
     color: white;
-    background-color: red;
+    font-family: ReplicaReg;
+    font-size: 18px;
+    line-height: 33px;
+    margin: 0px 0px;
+}
+
+.about-title{
+    color: #86ff16;
+    font-family: ReplicaReg;
+    font-size: 15px;
+    line-height: 33px;
+    margin: 0px 180px;
+    margin-bottom: -33px;
+    filter: drop-shadow(0px 0px 1px #0e111a)drop-shadow(0px 0px 2px #0e111a)
+    drop-shadow(0px 0px 2px #0e111a)drop-shadow(0px 0px 1px #0e111a)drop-shadow(0px 0px 2px #0e111a)
+    drop-shadow(0px 0px 2px #0e111a)drop-shadow(0px 0px 1px #0e111a)drop-shadow(0px 0px 2px #0e111a)
+    drop-shadow(0px 0px 2px #0e111a);
+}
+
+.about-description{
+    color: white;
+    font-family: ReplicaLight;
+    font-size: 18px;
+    line-height: 33px;
+    margin: 0px 300px;
+    max-width: 800px;
+filter: drop-shadow(0px 0px 1px #0e111a)drop-shadow(0px 0px 2px #0e111a)
+    drop-shadow(0px 0px 2px #0e111a)drop-shadow(0px 0px 1px #0e111a)drop-shadow(0px 0px 2px #0e111a)
+    drop-shadow(0px 0px 2px #0e111a);
+}
+
+.about-edu{
+    color: white;
+    font-family: ReplicaReg;
+    font-size: 15px;
+    line-height: 33px;
+    margin: 0px 300px;
+    max-width: 800px;
+    filter: drop-shadow(0px 0px 1px #0e111a)drop-shadow(0px 0px 2px #0e111a)
+    drop-shadow(0px 0px 2px #0e111a)drop-shadow(0px 0px 1px #0e111a)drop-shadow(0px 0px 2px #0e111a)
+    drop-shadow(0px 0px 2px #0e111a)drop-shadow(0px 0px 1px #0e111a)drop-shadow(0px 0px 2px #0e111a)
+    drop-shadow(0px 0px 2px #0e111a);
+}
+
+.about-contact{
+    color: white;
+    font-family: ReplicaLight;
+    font-size: 15px;
+    line-height: 33px;
+    margin: 0px 300px;
+    max-width: 800px;
+    filter: drop-shadow(0px 0px 1px #0e111a)drop-shadow(0px 0px 2px #0e111a)
+    drop-shadow(0px 0px 2px #0e111a)drop-shadow(0px 0px 1px #0e111a)drop-shadow(0px 0px 2px #0e111a)
+    drop-shadow(0px 0px 2px #0e111a)drop-shadow(0px 0px 1px #0e111a)drop-shadow(0px 0px 2px #0e111a)
+    drop-shadow(0px 0px 2px #0e111a);
+
 }
 
 .about-container{}
