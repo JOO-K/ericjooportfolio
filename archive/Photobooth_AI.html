@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Eric Joo | Creative Tech</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="../css/archivemenu.css">
+    <link rel="stylesheet" href="../css/navigation.css">
+    <link rel="stylesheet" href="../css/projects.css">
+    <link rel="stylesheet" href="../css/archivetoggle.css">
+    <link rel="stylesheet" href="../css/hpslide.css">
+
+    <link rel="icon" type="image/png" href="../images/greendot_favicon.png">
+
+    <!-- Libs -->
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.4.1/dist/jquery.min.js"></script>
+    <script src="https://unpkg.com/p5@1.11.1/lib/p5.min.js"></script>
+
+    <script src="https://unpkg.com/typewriter-effect@latest/dist/core.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Yarndings+12&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Yarndings+20&display=swap" rel="stylesheet">
+
+    <!-- Part loader -->
+    <script src="../js/partLoader.js" data-root="../"></script>
+
+
+</head>
+
+<body>
+    <header id="navigation"></header>
+    <div id="archivemenu"></div>
+
+    <article class="project-container" id="project1">
+        <div class="project-main-image">
+            <img src="../images/photobooth/Photobooth_Banner.png">
+            <!-- <h1>3D Gaussian Splat on the Web</h1> -->
+        </div>
+        <div class="project-box">
+            <div class="text-aisle">
+                <h1>Photobooth AI: StreamDiffusion Workflows</h1>
+                <h2>ComfyUI Local AI<br>
+                    10/15/2025</h2>
+
+                <br><br>
+                <h3>
+                    This real-time AI photobooth installation uses TouchDesigner and StreamDiffusion to generate AI
+                    images with live camera input and instant physical prints. The system eliminates typical latency
+                    issues associated with diffusion models by leveraging StreamDiffusion's optimized pipeline, which
+                    enables sub-second generation times suitable for interactive installations and live events.
+                </h3>
+
+                <h3>
+                    The workflow integrates a live camera feed into TouchDesigner, where users can input custom text
+                    prompts through a touch interface or keyboard. StreamDiffusion processes the camera input and text
+                    prompt in real-time, generating stylized images that reflect both the user's physical presence and
+                    their creative direction. Generated images are sent directly to a thermal or photo printer, creating
+                    physical takeaways that bridge the digital generation process with tangible outputs.
+                </h3>
+
+                <h3>
+                    StreamDiffusion's architecture is key to making this experience feel instantaneous. Unlike
+                    traditional Stable Diffusion workflows that can take 30+ seconds per image, StreamDiffusion uses
+                    batch processing and pipeline optimization to achieve near-real-time performance. This makes it
+                    viable for photobooth scenarios where users expect immediate feedback and quick turnaround times.
+                    The TouchDesigner environment handles the UI/UX layer, camera management, and printer communication,
+                    while StreamDiffusion focuses purely on the generation pipeline.
+                </h3>
+
+                <h3>
+                    This project explores the intersection of AI art generation and interactive physical installations.
+                    By removing the waiting period typically associated with AI image generation, the photobooth creates
+                    a more intuitive and engaging user experience. People can experiment with different prompts, see
+                    results immediately, and walk away with a physical artifact. It's particularly effective for events,
+                    exhibitions, and public installations where accessibility and immediacy are priorities over the
+                    highest possible image quality or resolution.
+                </h3>
+                <br><br>
+                <h3>
+
+                    Example inputs and outputs are shown on the side.
+
+                </h3>
+
+
+            </div>
+            <br><br><br> <br><br>
+            <div class="image-aisle">
+                <video controls autoplay loop muted>
+                    <source src="../images/photobooth/Recording 2024-12-02 024544.mp4"
+                        type="video/mp4">
+                </video>
+                <h1>▲ DESCRIPTION OF THE FUCKING IMAGE ▲</h1>
+                <img src="../gifs/Combined_T2VStyle_Output_01.gif">
+                <h1>▲ DESCRIPTION OF THE FUCKING IMAGE ▲</h1>
+
+                <img src="../gifs/Combined_T2VFLUX_Output.gif">
+                <h1>▲ DESCRIPTION OF THE FUCKING IMAGE ▲</h1>
+                <img src="../images/wideimg.jpg">
+                <h1>▲ DESCRIPTION OF THE FUCKING IMAGE ▲</h1>
+            </div>
+            <br><br><br><br><br><br><br>
+        </div>
+
+        <div class="project-home-button" id="project-home">
+            <h1>↫ homepage</h1>
+        </div>
+    </article>
+
+
+</body>
+
+</html>

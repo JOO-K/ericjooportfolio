@@ -23,6 +23,7 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+      object-position: top; 
 }
 
 .project-main-image h1 {
@@ -93,8 +94,8 @@
 .project-box .text-aisle h3 {
     font-family: ReplicaLight;
     font-size: 15px;
-    line-height: 20px;
-    letter-spacing: .4px;
+    line-height: 23px;
+    letter-spacing: 1px;
     color: white;
     padding: 0;
     margin: 0;
@@ -123,6 +124,13 @@
     object-fit: cover;
     margin-bottom: 12px;
 }
+
+.project-box .image-aisle video {
+    width: 100%;
+    object-fit: cover;
+    margin-bottom: 12px;
+}
+
 
 .project-box .image-aisle h1{
     font-family: Space Mono;
@@ -165,4 +173,39 @@
     font-size: 15px;
     margin: 0;
     padding: 10px 10px;
+}
+
+.project-box .text-aisle p{
+    color: white;
+}
+
+.json-link {
+    position: relative;
+    text-decoration: none;
+    color: greenyellow;
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+}
+
+.json-link:hover {
+    color: green;
+}
+
+.download-icon {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    margin-left: 5px;
+    font-size: 14px;
+}
+
+.json-link:hover .download-icon {
+    opacity: 1;
+}
+
+.project-box .text-aisle video{
+    width: 80%;
+}
+
+.project-box .text-aisle img{
+    width: 100%;
 }

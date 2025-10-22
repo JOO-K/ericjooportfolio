@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Eric Joo | Creative Tech</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="../css/archivemenu.css">
+    <link rel="stylesheet" href="../css/navigation.css">
+    <link rel="stylesheet" href="../css/projects.css">
+    <link rel="stylesheet" href="../css/archivetoggle.css">
+    <link rel="stylesheet" href="../css/hpslide.css">
+
+    <link rel="icon" type="image/png" href="../images/greendot_favicon.png">
+
+    <!-- Libs -->
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.4.1/dist/jquery.min.js"></script>
+    <script src="https://unpkg.com/p5@1.11.1/lib/p5.min.js"></script>
+
+    <script src="https://unpkg.com/typewriter-effect@latest/dist/core.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Yarndings+12&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Yarndings+20&display=swap" rel="stylesheet">
+
+    <!-- Part loader -->
+    <script src="../js/partLoader.js" data-root="../"></script>
+
+
+</head>
+
+<body>
+    <header id="navigation"></header>
+    <div id="archivemenu"></div>
+
+    <article class="project-container" id="project1">
+        <div class="project-main-image">
+            <img src="../images/diskokina/Disko_banner.png">
+            <!-- <h1>3D Gaussian Splat on the Web</h1> -->
+        </div>
+        <div class="project-box">
+            <div class="text-aisle">
+                <h1>Diskokina Music Festival 2025</h1>
+                <h2>Real-Time AI, ComfyUI Gen<br>
+                    10/15/2025</h2>
+
+                <br>
+
+                <br>
+
+                <h3>
+                    Real-time AI-generated visuals for composer and sound artist Ina Chen's performance at
+                    Diskokina Music Festival in Los Angeles (April 2025). Diskokina is a club-centric celebration of
+                    East Asian diasporic electronic music and culture, featuring performances across multiple LA venues
+                    including Resident, Genever, and Pattern Bar.
+                </h3>
+
+                <h3>
+                    For Ina Chen's "Lurker" performance, I deployed my custom ComfyUI workflow to generate live visuals
+                    that responded to her experimental electronic soundscapes. The workflow combined SDXL image
+                    generation models, Wan 2.2 video generation, and Ollama local LLMs to create dynamic visual
+                    sequences that evolved throughout the set. Using IP Adapter, ControlNet, and custom LoRA models, I
+                    targeted specific aesthetic qualities that complemented Ina's exploration of digital surveillance,
+                    online anonymity, and networked consciousness themes present in her work.
+                </h3>
+                
+                <br>
+                <img src="../images/diskokina/Disko_banner.png">
+                <br>
+
+                <h3>
+                    The system ran locally on high-VRAM hardware, allowing for image-to-video and frame-to-frame video
+                    generation in near-real-time. Ollama's Gemma3:4b model with image vision capabilities automated
+                    prompt generation and animation guidance, creating visual variations that maintained stylistic
+                    consistency while responding to the performance's sonic evolution. This approach allowed me to
+                    achieve the kind of aesthetic control typically associated with commercial services like Runway and
+                    Sora, but with the flexibility and responsiveness required for live performance contexts.
+                </h3>
+
+                <h3>
+                    The challenge was adapting a workflow designed for pre-rendered content into a live performance tool
+                    that could generate compelling visuals with minimal latency. By pre-loading image sequences and
+                    optimizing the generation pipeline, I was able to create a semi-generative visual experience that
+                    felt both intentional and spontaneously responsive to Ina's experimental electronic compositions.
+                </h3>
+                <br><br>
+                <h3>
+
+                    Example inputs and outputs are shown on the side.
+
+                </h3>
+
+
+            </div>
+            <br><br><br> <br><br>
+            <div class="image-aisle">
+                <img src="../images/comfyHeader.png">
+                <h1>▲ DESCRIPTION OF THE FUCKING IMAGE ▲</h1>
+                <img src="../gifs/Combined_T2VStyle_Output_01.gif">
+                <h1>▲ DESCRIPTION OF THE FUCKING IMAGE ▲</h1>
+
+                <img src="../gifs/Combined_T2VFLUX_Output.gif">
+                <h1>▲ DESCRIPTION OF THE FUCKING IMAGE ▲</h1>
+                <img src="../images/wideimg.jpg">
+                <h1>▲ DESCRIPTION OF THE FUCKING IMAGE ▲</h1>
+            </div>
+            <br><br><br><br><br><br><br>
+        </div>
+
+        <div class="project-home-button" id="project-home">
+            <h1>↫ homepage</h1>
+        </div>
+    </article>
+
+
+</body>
+
+</html>

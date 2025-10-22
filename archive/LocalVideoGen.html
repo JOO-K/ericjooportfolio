@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Eric Joo | Creative Tech</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="../css/archivemenu.css">
+    <link rel="stylesheet" href="../css/navigation.css">
+    <link rel="stylesheet" href="../css/projects.css">
+    <link rel="stylesheet" href="../css/archivetoggle.css">
+    <link rel="stylesheet" href="../css/hpslide.css">
+
+    <link rel="icon" type="image/png" href="../images/greendot_favicon.png">
+
+    <!-- Libs -->
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.4.1/dist/jquery.min.js"></script>
+    <script src="https://unpkg.com/p5@1.11.1/lib/p5.min.js"></script>
+
+    <script src="https://unpkg.com/typewriter-effect@latest/dist/core.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Yarndings+12&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Yarndings+20&display=swap" rel="stylesheet">
+
+    <!-- Part loader -->
+    <script src="../js/partLoader.js" data-root="../"></script>
+
+
+</head>
+
+<body>
+    <header id="navigation"></header>
+    <div id="archivemenu"></div>
+
+    <article class="project-container" id="project1">
+        <div class="project-main-image">
+            <img src="../images/videogen/VideoGen_Banner.png" style="object-position: center;">
+            <!-- <h1>3D Gaussian Splat on the Web</h1> -->
+        </div>
+        <div class="project-box">
+            <div class="text-aisle">
+                <h1>Local Video Generation Automation Workflow</h1>
+                <h2>ComfyUI, Ollama, Local AI<br>
+                    10/15/2025</h2>
+
+                <br><br>
+                <h3>Workflow File</h3>
+                <p>
+                    1.<a href="../data/LocalVideoWithSDXL.json" download="LocalVideoWithSDXL.json" class="json-link">
+                        T2V_Automated_Stylized.json
+                        <span class="download-icon">download</span>
+                    </a>
+                </p>
+                <p>
+                    2.<a href="../data/LocalVideoWithSDXL.json" download="LocalVideoWithSDXL.json" class="json-link">
+                        T2V_Automated.json
+                        <span class="download-icon">download</span>
+                    </a>
+                </p>
+                <p>
+                    3.<a href="../data/LocalVideoWithSDXL.json" download="LocalVideoWithSDXL.json" class="json-link">
+                        F2F_Automated_Stylized.json
+                        <span class="download-icon">download</span>
+                    </a>
+                </p>
+
+                <br>
+
+                <h3>I have been developing this workflow that uses ComfyUI to generate videos locally by combining SDXL
+                    image generation models,
+                    Wan 2.2 video gen, and Ollama Local LLMs. The workflow takes a text prompt as input and generates a
+                    sequence of images and prompts that are then compiled into a video file. The examples include
+                    workflows
+                    for single image gen to i2v and multi image gen to f2f video. The idea is to generate variations on
+                    very
+                    specific image aesthetics by leveraging ipadapter, controlnet, and lora into newer video workflows
+                    while automating the prompting of the animation through the use of guided local LLMs. This workflow
+                    tries
+                    to replicate locally, video outputs with style parameters similar to paid online services like Sora,
+                    Runway,
+                    and Google Flow. It is recommended to run this on 16gb of VRAM or higher.
+
+                </h3>
+
+                <h3>Ollama is required for this workflow to work. It is a local LLM hosting service that allows you to
+                    run
+                    various large language models on your own machine. Once installed, you can use the
+                    Ollama custom nodes downloadable from ComfyUI Manager to interact with the models hosted by Ollama.
+                    I use Gemma3:4b for this workflow because it has image vision to describe and prompt the animation
+                    for
+                    the video ouput and it operates quickly,
+                    but any viable llm would suffice with proper guidance.
+                </h3>
+
+                <h3>
+                    You can add or remove as many ipadapter nodes as you need to get the desired effect. This also
+                    applies to the Lora models.
+                    The images are loaded from the folder file path you provide in the Load Image List From Dir node
+                    from the ComfyUI-Inspire Pack.
+                    It goes through each image in the image sequence provided in the folder (img_1.png, img_2.png...)
+                    per generation allowing for more
+                    consistency or variation on output depending on the consistency of images that are put in the img
+                    sequence.
+                </h3>
+                <h3>
+                    Personally I think this workflow is great for targetting specific aesthetics and styles that are
+                    hard to achieve with
+                    general video gen models. By leveraging the strengths of IP Adapter and ControlNet to guide the
+                    image generation, you can achieve a
+                    high level of stylistic control over the final output. This is especially useful for artists and
+                    creators who want to maintain a
+                    consistent visual theme throughout their videos (Illustration, Material/Texture, Photography styles,
+                    etc).
+                </h3>
+                <br><br>
+                <h3>
+
+                    Example inputs and outputs are shown below
+                    <video controls autoplay loop muted>
+                        <source src="https://pub-1398beb5f0e74c5daf4e2d2ed7cd7f76.r2.dev/ComfyUI_00153_.mp4"
+                            type="video/mp4">
+
+                    </video>
+
+                </h3>
+
+
+            </div>
+            <br><br><br> <br><br>
+            <div class="image-aisle">
+                <img src="../images/comfyHeader.png">
+                <h1>▲ COMFYUI WORKFLOW LAYOUT ▲</h1>
+                <img src="../gifs/Combined_T2VStyle_Output_01.gif">
+                <h1>▲ IMAGE OUTPUT into STYLIZED OUTPUT into VIDEO OUTPUT ▲</h1>
+
+                <img src="../gifs/Combined_T2VFLUX_Output.gif">
+                <h1>▲ EXAMPLE VIDEO OUTPUT FROM IMAGE ▲</h1>
+                <img src="https://pub-1398beb5f0e74c5daf4e2d2ed7cd7f76.r2.dev/ComfyUI_00153_.mp4">
+                <h1>▲ DESCRIPTION OF THE FUCKING IMAGE ▲</h1>
+            </div>
+            <br><br><br><br><br><br><br>
+        </div>
+
+        <div class="project-home-button" id="project-home">
+            <h1>↫ homepage</h1>
+        </div>
+    </article>
+
+
+</body>
+
+</html>
