@@ -28,19 +28,19 @@ const DEFAULT_TRAIL_FADE_ALPHA   = 10;
 const BLUR_EVERY = 5;
 const BLUR_AMT   = 0.8;
 
-// Density baselines
-const DESK_STROKES_BASE = 60;
-const DESK_STROKES_MAX  = 150;
-const MOB_STROKES_BASE  = 42;
-const MOB_STROKES_MAX   = 96;
+// Density baselines (stronger initial effect)
+const DESK_STROKES_BASE = 90;
+const DESK_STROKES_MAX  = 200;
+const MOB_STROKES_BASE  = 60;
+const MOB_STROKES_MAX   = 130;
 
-// Joystick chaos/chain
-const NOISE_BASE = 0.18, NOISE_MAX = 0.55;
-const JITTER_BASE = 0.0, JITTER_MAX = 28.0;
-const CHAINS_MAX_SEGMENTS = 5;
-const LEN_BOOST_MAX       = 2.6;
-const RIGHT_STROKE_REDUCTION_MAX_DESK = 0.60;
-const RIGHT_STROKE_REDUCTION_MAX_MOB  = 0.70;
+// Joystick chaos/chain (stronger joystick response)
+const NOISE_BASE = 0.25, NOISE_MAX = 0.75;
+const JITTER_BASE = 0.0, JITTER_MAX = 40.0;
+const CHAINS_MAX_SEGMENTS = 7;
+const LEN_BOOST_MAX       = 3.5;
+const RIGHT_STROKE_REDUCTION_MAX_DESK = 0.55;
+const RIGHT_STROKE_REDUCTION_MAX_MOB  = 0.65;
 
 // Linger ranges
 const DECAY_EVERY_MIN = 2, DECAY_EVERY_MAX = 8;
@@ -75,16 +75,16 @@ export default class VideoBezierOutlineEffect {
     this.SAMPLE_STEP = 6;
     this.EDGE_POINTS_MAX = 2400;
 
-    // stroke gen baseline
-    this.STROKES_PER_FRAME = 90;
-    this.CURVE_LEN_MIN = 30;
-    this.CURVE_LEN_MAX = 120;
+    // stroke gen baseline (stronger)
+    this.STROKES_PER_FRAME = 120;
+    this.CURVE_LEN_MIN = 40;
+    this.CURVE_LEN_MAX = 150;
 
-    // trails
+    // trails (more visible)
     this.trails = null;
     this.TRAIL_FADE = DEFAULT_TRAIL_FADE_ALPHA;
-    this.BASE_WEIGHT = 1.1;
-    this.BASE_ALPHA  = 90;
+    this.BASE_WEIGHT = 1.5;
+    this.BASE_ALPHA  = 120;
 
     // click glow
     this._flareUntil = 0;

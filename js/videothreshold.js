@@ -98,14 +98,14 @@ class InlineVoronoiBG {
       [1,2,1,4,3,4,3,4,1,1]
     );
 
-    // rings + density + extents
-    this.ringsBase = Math.round(this._r(9, 18));
-    this.samples   = Math.round(this._r(160, 360));
+    // rings + density + extents (REDUCED for performance)
+    this.ringsBase = Math.round(this._r(6, 12));
+    this.samples   = Math.round(this._r(100, 200));
     this.innerFrac = this._r(0.03, 0.14);
     this.outerFrac = this._r(0.86, 0.99);
 
-    // perlin detail/seed + domain offsets + frequency bias
-    const octaves = Math.floor(this._r(2, 5));
+    // perlin detail/seed + domain offsets + frequency bias (REDUCED octaves for performance)
+    const octaves = Math.floor(this._r(2, 3));
     const gain    = this._r(0.38, 0.65);
     this._perlinDetail = { octaves, gain };
     this._perlinSeed   = (this._r(0, 1e9) | 0);
@@ -228,8 +228,8 @@ class InlineVoronoiBG {
     const Rmin = Math.min(W,H)*this.innerFrac;
     const Rmax = Math.min(W,H)*this.outerFrac;
 
-    // dynamic ring count
-    const rings = Math.max(8, Math.round(this.ringsBase + 6*(bus.rms + 0.35*bus.mid)));
+    // dynamic ring count (REDUCED for performance)
+    const rings = Math.max(6, Math.round(this.ringsBase + 4*(bus.rms + 0.35*bus.mid)));
 
     // amplitude budget
     const ampBase  = 0.05*Rmax;
@@ -599,12 +599,13 @@ export default class VideoThresholdEffect {
     const now = p.millis() * 0.001;
     this.ripples = this.ripples.filter(rp => this._rippleRadius(now, rp) >= 0);
 
-    // joystick raindrops
+    // joystick raindrops - optimized to reduce lag
     if (this.dropRateHz > 0.001) {
       this.dropClockSec += this._dt;
       const period = 1 / this.dropRateHz;
 
-      const dropsPerTickBase = 1 + Math.floor(Math.min(1, Math.abs(this._jy)) * 3); // 1..4
+      // Reduced from 1-4 drops to 1-2 drops per tick for better performance
+      const dropsPerTickBase = 1 + Math.floor(Math.min(1, Math.abs(this._jy)) * 1); // 1..2
       while (this.dropClockSec >= period) {
         this.dropClockSec -= period;
 

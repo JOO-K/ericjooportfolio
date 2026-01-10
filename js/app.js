@@ -5,7 +5,7 @@ import { AsciiSilhouetteEffect } from './ascii.js';
 import VideoThresholdEffect from './videothreshold.js';
 import VideoConnectedParticlesEffect from './videoparticles.js';
 import VideoBezierOutlineEffect from './videobezier.js';
-import VideoMosaicPanelsEffect from './videomosaic.js';
+import VideoFractalEffect from './videofractal.js';
 import { VideoPlaylist } from './playlist.js';
 // app.js (top)
 import { initMiddleUI } from './middleui.js';
@@ -17,7 +17,7 @@ import { initMusicPlayer } from './music.js';
 let currentEffect = null;
 let p5Instance = null;
 let sharedPlaylist = null;
-// START WITH VIDEO THRESHOLD FIRST
+// START WITH VIDEO THRESHOLD (ascii)
 let currentKey = 'video+threshold';
 
 // --- auto-rotate state ---
@@ -35,16 +35,16 @@ const EFFECTS = {
   'video+threshold' : (opts) => new VideoThresholdEffect(opts),
   'video+particles' : (opts) => new VideoConnectedParticlesEffect(opts),
   'video+bezier'    : (opts) => new VideoBezierOutlineEffect(opts),
-  'video+mosaic'    : (opts) => new VideoMosaicPanelsEffect(opts),
+  'video+fractal'   : (opts) => new VideoFractalEffect(opts),
 };
 
 // meta kept for titles (no preview thumbnails used now)
 const EFFECT_META = {
-  'ascii+drips'     : { title: 'ASCII + Drips',               thumb: './images/effect_01.png' },
+  'ascii+drips'     : { title: 'ASCII + Drips',               thumb: './images/ewffect_01.png' },
   'video+threshold' : { title: 'ASCII Video Threshold',       thumb: './images/effect_02.png' },
   'video+particles' : { title: 'Video Connected Particles',   thumb: './images/effect_03.png' },
   'video+bezier'    : { title: 'Video Bezier Outline',        thumb: './images/effect_04.png' },
-  'video+mosaic'    : { title: 'Video Mosaic Panels',         thumb: './images/effect_05.png' },
+  'video+fractal'   : { title: 'Video Noise Field',           thumb: './images/effect_05.png' },
 };
 
 // simple mobile check (layout + UA hint)
@@ -57,24 +57,25 @@ const isMobile = () =>
    ======================= */
 
 function lockViewportNoScroll() {
-  document.documentElement.style.overflow = 'hidden';
+  // Keep the page layout normalized but do NOT disable scrolling.
+  // This makes the canvas act as a fixed background while the page can still scroll.
+  document.documentElement.style.overflow = ''; // let the browser manage scrolling
   document.body.style.margin = '0';
-  document.body.style.overflow = 'hidden';
+  document.body.style.minHeight = '100vh';
+  // do NOT set body.style.overflow = 'hidden' — we want page scroll to work
 }
 
 function sizeCanvasToViewport(p) {
   const w = Math.floor(window.innerWidth);
   const h = Math.floor(window.innerHeight);
   p.resizeCanvas(w, h);
+
+  // Add a CSS class so styling & pointer behavior can be controlled from your stylesheet.
   const c = p._renderer?.elt || p.canvas;
   if (c) {
-    c.style.position = 'fixed';
-    c.style.top = '0';
-    c.style.left = '0';
-    c.style.width = '100vw';
-    c.style.height = '100vh';
-    c.style.display = 'block';
-    c.style.zIndex = '0'; // keep canvas at the bottom
+    c.classList.add('fixed-canvas');
+    // NOTE: appearance & interaction (position, z-index, pointer-events) are handled via CSS.
+    // We avoid inlining those so you can control them from your styles.
   }
 }
 
@@ -142,10 +143,10 @@ function boot(effectKey = currentKey) {
         window.__musicInitDone = true;
       }
 
-    if (!window.__middleUIReady) {
-  initMiddleUI();            // will no-op if already added
-  window.__middleUIReady = true;
-}
+      if (!window.__middleUIReady) {
+        initMiddleUI();            // will no-op if already added
+        window.__middleUIReady = true;
+      }
 
       // kick off auto-rotation (only once)
       startAutoRotate();
@@ -203,8 +204,8 @@ function switchEffect(key) {
    ======================= */
 
 function getEffectOrder() {
-  // VIDEO THRESHOLD FIRST IN ROTATION
-  return ['video+threshold', 'ascii+drips', 'video+particles', 'video+bezier', 'video+mosaic'];
+  // Order: ascii, floating dots, draws, crosses/x's, colorful pixels
+  return ['video+threshold', 'video+particles', 'video+bezier', 'ascii+drips', 'video+fractal'];
 }
 
 function rotateToNext() {
@@ -358,7 +359,7 @@ async function useWebcamAsSource() {
       setTimeout(() => { try { URL.revokeObjectURL(_customBlobURL); } catch {} }, 500);
       _customBlobURL = null;
     }
-    if (_webcamStream) { _webcamStream.getTracks().forEach(t => t.stop()); }
+    if (_webcamStream) { _webcam_stream?.getTracks()?.forEach(t => t.stop()); }
     _webcamStream = stream;
 
     return true;
@@ -494,7 +495,7 @@ function wireDock(joystickCallback) {
     flash(tiny, 'Demo');
   });
 
-  // On mobile we still show Upload + Webcam + Demo
+  // Add buttons to container
   tiny.appendChild(uploadBtn);
   tiny.appendChild(camBtn);
   tiny.appendChild(demoBtn);
@@ -556,10 +557,10 @@ function wireDock(joystickCallback) {
 
   const addDot = (k) => bar.appendChild(mkDot(k, EFFECT_META[k]?.title || k));
   addDot('video+threshold');
-  addDot('ascii+drips');
   addDot('video+particles');
   addDot('video+bezier');
-  addDot('video+mosaic');
+  addDot('ascii+drips');
+  addDot('video+fractal');
 
   // Assemble
   dock.appendChild(bar);

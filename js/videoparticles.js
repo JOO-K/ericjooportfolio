@@ -272,8 +272,8 @@ export class VideoConnectedParticlesEffect {
     this.anchorColor = 230;
     this.anchors = [];
 
-    // ----- Floaters (moving, invisible) -----
-    this.floaterCount = 160;
+    // ----- Floaters (moving, invisible) - REDUCED for performance -----
+    this.floaterCount = 80;
     this.floaterSpeed = 60;
     this.drag         = 0.985;
     this.noiseAmp     = 26;
@@ -299,21 +299,18 @@ export class VideoConnectedParticlesEffect {
     this.ripples = [];
 
     // ----- Floater spawn on click/tap (lighter) -----
-    this.SPAWN_ON_CLICK_COUNT = 20;
-    this.FLOATER_LIFETIME_SEC = 5.0;
-    this.FLOATER_MAX          = 300;
+    this.SPAWN_ON_CLICK_COUNT = 12;
+    this.FLOATER_LIFETIME_SEC = 4.0;
+    this.FLOATER_MAX          = 180;
     this.SPAWN_RADIUS         = 60;
     this.SPAWN_SPEED_BOOST    = 120;
 
-    // ----- Joystick row spawner (lightweight) -----
+    // ----- Joystick controls particle density (not row spawning) -----
     this._joyActive = false;
     this._joyDir = 'center';
     this._joyMag = 0;
-    this.ROW_RATE_MAX = 3.5;
-    this.ROW_LIFE_SEC = 3.0;
-    this.ROW_SPEED    = 460;
-    this.ROW_SPACING  = 28;
-    this._rowClock    = 0;
+    this._joyX = 0;
+    this._joyY = 0;
 
     // ----- Joystick-driven color palette -----
     this.paletteCenter = 210;
@@ -323,23 +320,26 @@ export class VideoConnectedParticlesEffect {
     this.colorMaxBoost     = 0.55;
     this.colorAlpha        = 170;
 
-    // ==== BEADS: params
+    // ==== BEADS: params - REDUCED for performance
     this.beads = [];
-    this.BEAD_MAX = 80;
-    this.BEAD_LIFE = 3.2;          // seconds
+    this.BEAD_MAX = 40;
+    this.BEAD_LIFE = 2.5;          // seconds
     this.BEAD_BASE_R = 6;          // px base radius
     this.BEAD_RANGE = 90;          // influence radius
     this.BEAD_FORCE = 1400;        // N-ish (tuned)
-    this.BEAD_SPAWN_PER_SEC = 18;  // average spawns per sec (capped by MAX)
+    this.BEAD_SPAWN_PER_SEC = 8;   // average spawns per sec (capped by MAX)
     this._beadClock = 0;
   }
 
-  // joystick
-  onJoystick({ dir = 'center', mag = 0, active = false } = {}) {
+  // joystick - controls particle density and connection distance
+  onJoystick({ x = 0, y = 0, dir = 'center', mag = 0, active = false } = {}) {
     this._joyDir = dir || 'center';
     this._joyMag = Math.max(0, Math.min(1, mag || 0));
     this._joyActive = !!active || this._joyMag > 0.12;
+    this._joyX = Math.max(-1, Math.min(1, x || 0));
+    this._joyY = Math.max(-1, Math.min(1, y || 0));
 
+    // Color palette based on direction
     switch (this._joyDir) {
       case 'up':    this.paletteCenter = 210; this.paletteWidth = 35; break;
       case 'right': this.paletteCenter = 15;  this.paletteWidth = 30; break;
@@ -416,7 +416,8 @@ export class VideoConnectedParticlesEffect {
   }
 
   _seedFloaters(p) {
-    const N = (p.windowWidth <= 800) ? Math.floor(this.floaterCount * 0.7) : this.floaterCount;
+    const base = (p.windowWidth <= 800) ? Math.floor(this.floaterCount * 0.6) : this.floaterCount;
+    const N = base;
     this.floaters = [];
     const nowSec = p.millis() * 0.001;
     for (let i = 0; i < N; i++) {
@@ -567,23 +568,11 @@ export class VideoConnectedParticlesEffect {
     // update voronoi bg (FIRST so it draws behind)
     this._vor.update(p, dt);
 
-    // Joystick row spawns (light)
-    if (this._joyActive && this._joyDir !== 'center') {
-      const rate = this.ROW_RATE_MAX * Math.min(1, Math.max(0, this._joyMag)); // rows/sec
-      const period = (rate > 0.001) ? (1 / rate) : Infinity;
-      this._rowClock += dt;
-      while (this._rowClock >= period) {
-        this._rowClock -= period;
-        const side = (this._joyDir === 'left')  ? 'right'
-                    : (this._joyDir === 'right') ? 'left'
-                    : (this._joyDir === 'up')    ? 'bottom'
-                    : (this._joyDir === 'down')  ? 'top'
-                    : 'top';
-        this._spawnRowFromEdge(p, side, nowSec, this._joyMag);
-      }
-    } else {
-      this._rowClock = 0;
-    }
+    // Joystick controls connection distance: UP increases, DOWN decreases
+    const baseLink = 110;
+    const linkMod = this._joyY * 50; // -50 to +50
+    this.linkDist = Math.max(60, Math.min(160, baseLink - linkMod));
+    this._bucketSize = this.linkDist;
 
     // Move floaters with noise flow + wrap bounds
     for (let i = 0; i < this.floaters.length; i++) {

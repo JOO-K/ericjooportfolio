@@ -275,6 +275,12 @@ function buildUI() {
     pointerEvents:'auto', isolation:'isolate'
   });
   host.id = 'music-host';
+
+  // Hide on mobile
+  if (isMobileViewport()) {
+    host.style.display = 'none';
+  }
+
   document.body.appendChild(host);
 
   const column = mk('div', {
@@ -558,12 +564,14 @@ function buildUI() {
 
 /* ---------- public init ---------- */
 export async function initMusicPlayer() {
-  if (document.getElementById('music-host')) return;
+  // Remove any existing music host first
+  const existing = document.getElementById('music-host');
+  if (existing) existing.remove();
 
-  // initialize a default bus so listeners don’t fail before audio starts
+  // initialize a default bus so listeners don't fail before audio starts
   publishAudioBus();
 
-  // Mobile guard: disable UI + graph on small viewports
+  // Mobile guard: disable UI + graph on small viewports (800px and below)
   if (isMobileViewport()) {
     if (window.__AUDIO_BUS) {
       window.__AUDIO_BUS.playing = false;
@@ -578,7 +586,7 @@ export async function initMusicPlayer() {
     window.__AUDIO_DISABLED = true;
     // Still expose a stub API for middleui
     buildAPI(true);
-    return;
+    return; // Don't create UI on mobile
   }
 
   window.__AUDIO_DISABLED = false;

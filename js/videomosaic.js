@@ -39,16 +39,16 @@ export default class VideoMosaicPanelsEffect {
     this._ownsVideo = !this.video;
     this.maskData = null;
 
-    // grid
-    this.baseGrid       = CONFIG.GRID_DESKTOP * 0.9;
-    this.baseGridMobile = CONFIG.GRID_MOBILE * 1.0;
+    // grid - larger cells = fewer panels for better performance
+    this.baseGrid       = CONFIG.GRID_DESKTOP * 1.4;  // was 0.9, now 1.4 = ~56% more area per cell
+    this.baseGridMobile = CONFIG.GRID_MOBILE * 1.6;   // was 1.0, now 1.6 = ~60% more area per cell
     this.grid = this.baseGrid;
     this.cols = 0;
     this.rows = 0;
 
-    // tiling
-    this.tileSizes   = [1, 2, 3];
-    this.tileWeights = [0.56, 0.30, 0.14];
+    // tiling - favor larger tiles for fewer total panels
+    this.tileSizes   = [2, 3];            // removed size 1, only 2x2 and 3x3
+    this.tileWeights = [0.60, 0.40];      // 60% medium, 40% large
 
     // look (softened to be less jarring)
     this.GAP_PX        = 2;
@@ -58,9 +58,9 @@ export default class VideoMosaicPanelsEffect {
     this.strokeA       = 120;              // reduced alpha
     this.strokeW       = 0.6;              // crisp but subtle
 
-    // repack tween
-    this.REPACK_PERIOD_MS_BASE = 540;      // slightly slower idle
-    this.REPACK_TWEEN_MS       = 420;
+    // repack tween - slower for smoother performance
+    this.REPACK_PERIOD_MS_BASE = 720;      // slower idle (was 540)
+    this.REPACK_TWEEN_MS       = 520;      // longer tween for smoother motion (was 420)
     this._lastPackAt      = 0;
     this._tweenStartAt    = 0;
     this._tweenActive     = false;
@@ -79,13 +79,13 @@ export default class VideoMosaicPanelsEffect {
     this._jmag = 0; // 0..1
     this._jactive = false;
 
-    // physics params (snap + settle)
-    this.SPRING_K    = 24.0;
-    this.DAMPING     = 6.0;
-    this.GRAVITY_MAX = 1800;
-    this.PUNCH_IMP   = 900;
+    // physics params (snap + settle) - gentler for larger panels
+    this.SPRING_K    = 20.0;   // was 24.0 - softer spring
+    this.DAMPING     = 7.0;    // was 6.0 - more damping for stability
+    this.GRAVITY_MAX = 1500;   // was 1800 - less intense gravity
+    this.PUNCH_IMP   = 750;    // was 900 - gentler punch
     this.PUNCH_JITTER= 0.25;
-    this.PUNCH_EVERY = 160;
+    this.PUNCH_EVERY = 180;    // was 160 - less frequent punches
     this._lastPunchAt= 0;
 
     this._prevMag = 0;
@@ -200,7 +200,8 @@ export default class VideoMosaicPanelsEffect {
       for (let c = 0; c < this.cols; c++) {
         if (this.occ[r][c]) continue;
 
-        const trySizes = [3,2,1].filter(sz => this.tileSizes.includes(sz));
+        // Try larger sizes first for fewer panels
+        const trySizes = [3, 2].filter(sz => this.tileSizes.includes(sz));
         let placed = false;
         for (let s of trySizes) {
           if (!this._canPlace(c, r, s, s)) continue;
