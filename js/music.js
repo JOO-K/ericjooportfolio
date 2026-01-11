@@ -18,7 +18,7 @@ const UI = { text:'#e6e8f0', white:'#ffffff' };
 const SIZE = {
   leftPad: 18,
   gapY: 11,
-  dot: 18,
+  dot: 12, // Reduced from 18 to 12 (3px smaller radius)
   W: 240,
   vizH: 56,
   barGap: 2,
@@ -302,7 +302,7 @@ function buildUI() {
   const barW = Math.floor(usable / bandCount);
   const remainder = usable - barW * bandCount;
 
-  const minH = 2;
+  const minH = 0; // Start at 0 height (hidden until music plays)
 
   for (let i=0;i<bandCount;i++){
     const extra = (i === bandCount - 1) ? remainder : 0;
@@ -311,11 +311,11 @@ function buildUI() {
 
     const bar = mk('div', {
       position:'absolute', bottom:'0', left:`${x}px`, width:`${widthPx}px`,
-      height:`${minH}px`, background:UI.white, opacity:'0.6', pointerEvents:'none'
+      height:`${minH}px`, background:UI.white, opacity:'0', pointerEvents:'none'
     });
     const cap = mk('div', {
       position:'absolute', left:`${x}px`, width:`${widthPx}px`, height:'2px',
-      background:UI.white, opacity:'0.85', bottom:'0', pointerEvents:'none'
+      background:UI.white, opacity:'0', bottom:'0', pointerEvents:'none' // Start hidden
     });
     barsWrap.appendChild(bar); barsWrap.appendChild(cap);
     bars.push(bar); caps.push(cap);
@@ -334,7 +334,7 @@ function buildUI() {
   // --- K/S/H meters ---
   const kshWrap = mk('div', {
     display:'grid', gridTemplateColumns:'1fr 1fr 1fr', alignItems:'center',
-    gap:'6px', width:'100%', height:`${SIZE.kshH + 4}px`, marginTop:'4px'
+    gap:'6px', width:'100%', height:`${SIZE.kshH + 4}px`, marginTop:`${SIZE.gapY}px`
   });
   const mkMeter = () => {
     const box = mk('div', { height:`${SIZE.kshH}px`, background:'rgba(255,255,255,0.15)', position:'relative' });
@@ -387,8 +387,8 @@ function buildUI() {
     return { rail, input };
   }
 
-  // progress (thin)
-  const { rail:progRail, input:prog } = makeRailRange(3, SIZE.dot - 4, 'progress', 'music-prog');
+  // progress (thin) - same size dot as controls
+  const { rail:progRail, input:prog } = makeRailRange(3, SIZE.dot, 'progress', 'music-prog');
   prog.min='0'; prog.max='1'; prog.step='0.001'; prog.value='0';
 
   // track & thumb same color
@@ -437,16 +437,46 @@ function buildUI() {
   });
   titleBox.appendChild(titleInner);
 
-  // volume rail
+  // volume rail - minimal with fill indicator
   const volHeight = Math.round(SIZE.dot / 2);
-  const { rail:volRail, input:vol } = makeRailRange(volHeight, SIZE.dot - 4, 'volume', 'music-vol');
+  const volContainer = mk('div', { position:'relative', width:`${SIZE.W}px`, height:`${volHeight}px` });
+
+  // Background track
+  const volTrack = mk('div', {
+    position:'absolute', top:'0', left:'0', width:'100%', height:`${volHeight}px`,
+    background:'rgba(255,255,255,0.22)', borderRadius:'999px'
+  });
+
+  // Fill indicator
+  const volFill = mk('div', {
+    position:'absolute', top:'0', left:'0', width:'30%', height:`${volHeight}px`,
+    background:'#ffffff', borderRadius:'999px', pointerEvents:'none'
+  });
+
+  // Invisible slider on top
+  const vol = mk('input');
+  vol.type = 'range';
   vol.min='0'; vol.max='1'; vol.step='0.01'; vol.value='0.30';
+  Object.assign(vol.style, {
+    position:'absolute', top:'0', left:'0', width:'100%', height:`${volHeight}px`,
+    opacity:'0', cursor:'pointer', margin:'0'
+  });
+
+  volContainer.appendChild(volTrack);
+  volContainer.appendChild(volFill);
+  volContainer.appendChild(vol);
+
+  // Update fill on input
+  vol.addEventListener('input', () => {
+    const percent = (Number(vol.value) * 100).toFixed(1);
+    volFill.style.width = `${percent}%`;
+  });
 
   row.appendChild(prevBtn);
   row.appendChild(playBtn);
   row.appendChild(nextBtn);
   row.appendChild(titleBox);
-  row.appendChild(volRail);
+  row.appendChild(volContainer);
 
   // assemble
   column.appendChild(vizBox);
@@ -543,6 +573,7 @@ function buildUI() {
 
         const capH = Math.round(2 + capsPeak[i]*(SIZE.vizH - 6) * HEADROOM);
         capsRef[i].style.bottom = Math.max(capH - 2, 0) + 'px';
+        capsRef[i].style.opacity = String(0.85); // Show caps when music plays
       }
 
       // K/S/H meters

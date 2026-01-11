@@ -414,7 +414,15 @@ export function initMiddleUI(){
   if (document.getElementById('middle-ui')) return;
 
   // host + buttons
-  _host = mk('div', { position:'fixed', zIndex:'900', pointerEvents:'auto', userSelect:'none' });
+  _host = mk('div', {
+    position:'fixed',
+    zIndex:'900',
+    pointerEvents:'auto',
+    userSelect:'none',
+    display:'flex',
+    flexDirection:'column',
+    gap:'5px'
+  });
   _host.id = 'middle-ui';
 
   _vinylBtn  = mk('button', {...btnStyle}); _vinylBtn.textContent='💿'; _vinylBtn.title='Vinyl';

@@ -307,33 +307,27 @@ canvas {
 }
 #fx-dock, #fx-dock * { pointer-events: auto !important; }
 
-/* Tooltip styling for joystick icons */
-.icon-tooltip {
-  position: relative;
-}
-
-.icon-tooltip::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(14, 17, 26, 0.95);
-  color: #e3e3e3;
-  padding: 4px 8px;
-  border-radius: 4px;
+/* Joystick buttons: text on desktop, icons on mobile */
+.joystick-btn {
   font-size: 9px;
   font-family: "DM Mono", monospace;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 200ms ease;
-  z-index: 100000;
-  border: 1px solid rgba(230, 232, 240, 0.2);
+  width: auto;
+  min-width: 26px;
+  padding: 0;
+  display: inline-block;
 }
 
-.icon-tooltip:hover::after {
-  opacity: 1;
+@media (max-width: 800px) {
+  .joystick-btn::before {
+    content: attr(data-icon);
+    font-size: 14px;
+  }
+  .joystick-btn {
+    font-size: 0 !important;
+    width: 26px;
+    min-width: 26px;
+    padding: 0;
+  }
 }
 
 /* Drawing mode UI */
@@ -349,23 +343,35 @@ canvas {
 }
 
 #draw-mode-toggle {
-  width: 20px;
-  height: 20px;
-  background: rgba(14, 17, 26, 0.7);
-  border: 1px solid rgba(230, 232, 240, 0.3);
-  border-radius: 4px;
+  background: transparent;
+  border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  transition: all 200ms ease;
+  font-size: 9px;
+  font-family: "DM Mono", monospace;
+  color: rgba(230, 232, 240, 0.5);
+  transition: color 150ms ease;
   align-self: flex-end;
+  padding: 0;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 #draw-mode-toggle:hover {
-  background: rgba(14, 17, 26, 0.9);
-  border-color: rgba(230, 232, 240, 0.5);
+  color: rgba(230, 232, 240, 0.8);
+}
+
+/* Mobile: show icon instead of text */
+@media (max-width: 1300px) {
+  #draw-mode-toggle::before {
+    content: '✏️';
+    font-size: 12px;
+  }
+  #draw-mode-toggle {
+    font-size: 0;
+  }
 }
 
 #draw-controls {
@@ -375,6 +381,7 @@ canvas {
   display: none;
   flex-direction: column;
   gap: 4px;
+  align-items: flex-end; /* Right-align all rows */
 }
 
 #draw-controls.active {
@@ -385,6 +392,7 @@ canvas {
   display: flex;
   gap: 4px;
   align-items: center;
+  justify-content: flex-end; /* Right-align content within rows */
 }
 
 .draw-btn {
@@ -396,7 +404,7 @@ canvas {
   font-family: "DM Mono", monospace;
   color: rgba(230, 232, 240, 0.5);
   transition: color 150ms ease;
-  text-align: left;
+  text-align: right;
   white-space: nowrap;
   line-height: 1.2;
 }

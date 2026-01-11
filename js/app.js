@@ -424,50 +424,48 @@ function wireDock(joystickCallback) {
   forcePE.textContent = `#fx-dock, #fx-dock * { pointer-events: auto !important; touch-action: manipulation; }`;
   document.head.appendChild(forcePE);
 
-  // ---- TINY SOURCE ICONS (subtle) ----
+  // ---- TINY SOURCE ICONS (vertical, no box, right-aligned) ----
   const tiny = mk('div', {
     display: 'flex',
-    gap: '6px',
-    alignItems: 'center',
-    padding: '4px 6px',
-    background: 'rgba(14,17,26,0.40)',
-    border: '1px solid rgba(230,232,240,0.14)',
-    borderRadius: '10px',
-    opacity: '0.78',
-    transition: 'opacity 140ms ease',
+    flexDirection: 'column',
+    gap: '4px',
+    alignItems: 'flex-end', // Right-align items
+    padding: '0',
+    background: 'transparent',
+    border: 'none',
   });
-  tiny.addEventListener('mouseenter', () => (tiny.style.opacity = '1'));
-  tiny.addEventListener('mouseleave', () => (tiny.style.opacity = '0.78'));
+  tiny.id = 'video-input-container';
 
   const icoBtn = (label, title) => {
     const b = mk('button', {
-      width: '26px', height: '26px', borderRadius: '8px',
-      border: '1px solid rgba(230,232,240,0.55)',
-      background: 'rgba(230,232,240,0.08)', color: '#e6e8f0',
-      fontSize: '13px', lineHeight: '26px',
-      cursor: 'pointer', padding: '0',
-      transition: 'transform 120ms ease, background 120ms ease, border-color 120ms ease',
+      background: 'transparent',
+      border: 'none',
+      color: 'rgba(230, 232, 240, 0.5)',
+      fontSize: '9px',
+      fontFamily: '"DM Mono", monospace',
+      cursor: 'pointer',
+      padding: '0',
+      textAlign: 'right',
+      transition: 'color 150ms ease',
     });
     b.textContent = label;
     b.title = title;
-    b.addEventListener('mouseenter', () => (b.style.background = 'rgba(230,232,240,0.15)'));
-    b.addEventListener('mouseleave', () => (b.style.background = 'rgba(230,232,240,0.08)'));
-    b.addEventListener('mousedown', () => (b.style.transform = 'scale(0.95)'));
-    b.addEventListener('mouseup',   () => (b.style.transform = 'scale(1)'));
+    b.addEventListener('mouseenter', () => (b.style.color = 'rgba(230, 232, 240, 0.8)'));
+    b.addEventListener('mouseleave', () => (b.style.color = 'rgba(230, 232, 240, 0.5)'));
     return b;
   };
 
-  const uploadBtn = icoBtn('📤', 'Upload video (U)');
-  const camBtn    = icoBtn('🎥', 'Webcam (W)');
-  const demoBtn   = icoBtn('◼︎',  'Demo playlist (D)');
+  const uploadBtn = icoBtn('upload', 'Upload video (U)');
+  const camBtn    = icoBtn('webcam', 'Webcam (W)');
+  const demoBtn   = icoBtn('demo',  'Demo playlist (D)');
 
-  // Add tooltips
-  uploadBtn.classList.add('icon-tooltip');
-  uploadBtn.setAttribute('data-tooltip', 'Upload video');
-  camBtn.classList.add('icon-tooltip');
-  camBtn.setAttribute('data-tooltip', 'Use webcam');
-  demoBtn.classList.add('icon-tooltip');
-  demoBtn.setAttribute('data-tooltip', 'Demo playlist');
+  // Add classes for desktop text / mobile icon switching
+  uploadBtn.classList.add('joystick-btn');
+  uploadBtn.dataset.icon = '📤';
+  camBtn.classList.add('joystick-btn');
+  camBtn.dataset.icon = '🎥';
+  demoBtn.classList.add('joystick-btn');
+  demoBtn.dataset.icon = '◼︎';
 
   const fileInput = mk('input', { position: 'absolute', left: '-9999px' });
   fileInput.type = 'file';
@@ -808,10 +806,10 @@ function initDrawingMode() {
   const container = document.createElement('div');
   container.id = 'draw-mode-container';
 
-  // Toggle button (pencil icon)
+  // Toggle button (text for desktop, icon for mobile)
   const toggleBtn = document.createElement('div');
   toggleBtn.id = 'draw-mode-toggle';
-  toggleBtn.innerHTML = '✏️';
+  toggleBtn.textContent = 'draw';
   toggleBtn.title = 'Draw mode';
 
   // Controls panel
