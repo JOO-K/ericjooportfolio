@@ -24,6 +24,19 @@ body {
   -ms-overflow-style: none; /* IE and Edge */
 }
 
+/* Text selection styling */
+::selection {
+  background: #39ff14;
+  color: #0e111a;
+  text-shadow: none;
+}
+
+::-moz-selection {
+  background: #39ff14;
+  color: #0e111a;
+  text-shadow: none;
+}
+
 /* Hide scrollbars for Chrome, Safari and Opera */
 html::-webkit-scrollbar,
 body::-webkit-scrollbar,
@@ -72,8 +85,8 @@ canvas {
   font-size: 12px;
   line-height: 18px;
   z-index: 80;
-  pointer-events: none;
-  filter: drop-shadow(0px 0px 2px #0e111a) drop-shadow(0px 0px 3px #0e111a) 
+  pointer-events: auto;
+  filter: drop-shadow(0px 0px 2px #0e111a) drop-shadow(0px 0px 3px #0e111a)
   drop-shadow(0px 0px 4px #0e111a)drop-shadow(0px 0px 4px #0e111a)drop-shadow(0px 0px 4px #0e111a);
 }
 
@@ -96,10 +109,13 @@ canvas {
   font-size: 15.5px;
 }
 
-/* Make the typewriter overlay non-interactive */
-#hp-typewriter,
+/* Allow text selection in typewriter */
+#hp-typewriter {
+  pointer-events: auto;
+}
+
 #hp-typewriter * {
-  pointer-events: none !important;
+  pointer-events: auto;
 }
 
 /* Keep p5 canvas at the bottom of the stack */
@@ -143,11 +159,7 @@ canvas {
   pointer-events: auto; /* Allow mouse interaction with canvas */
 }
 
-/* typewriter stays non-interactive */
-#hp-typewriter,
-#hp-typewriter * {
-  pointer-events: none !important;
-}
+/* typewriter is now interactive for text selection */
 
 /* FX dock sits above canvas(0) and below menu(1000)/nav(100000) */
 #fx-dock {
@@ -164,9 +176,13 @@ canvas {
       height: 300px; /* Fixed height */
       background: transparent;
       z-index: 80;
-      pointer-events: none;
+      pointer-events: none !important;
       opacity: 1; /* Always visible */
       overflow: hidden; /* Clip overflow */
+    }
+
+    #app-loader * {
+      pointer-events: none !important;
     }
 
     #app-loader.hidden {
@@ -202,7 +218,7 @@ canvas {
     /* Allow scrolling after boot is complete */
     .console-output.scrollable {
       overflow-y: scroll;
-      pointer-events: auto;
+      pointer-events: none;
     }
 
     #console-output {
@@ -250,6 +266,13 @@ canvas {
         font-size: 6px;
         line-height: 9px;
       }
+      /* Hide music player and controls on mobile */
+      #music-host {
+        display: none !important;
+      }
+      #middle-ui {
+        display: none !important;
+      }
     }
 
     /* Fixed background canvas (controlled in CSS so you can tweak from a single place) */
@@ -283,4 +306,144 @@ canvas {
   pointer-events: auto;
 }
 #fx-dock, #fx-dock * { pointer-events: auto !important; }
+
+/* Tooltip styling for joystick icons */
+.icon-tooltip {
+  position: relative;
+}
+
+.icon-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(14, 17, 26, 0.95);
+  color: #e3e3e3;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-family: "DM Mono", monospace;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  z-index: 100000;
+  border: 1px solid rgba(230, 232, 240, 0.2);
+}
+
+.icon-tooltip:hover::after {
+  opacity: 1;
+}
+
+/* Drawing mode UI */
+#draw-mode-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+#draw-mode-toggle {
+  width: 20px;
+  height: 20px;
+  background: rgba(14, 17, 26, 0.7);
+  border: 1px solid rgba(230, 232, 240, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all 200ms ease;
+  align-self: flex-end;
+}
+
+#draw-mode-toggle:hover {
+  background: rgba(14, 17, 26, 0.9);
+  border-color: rgba(230, 232, 240, 0.5);
+}
+
+#draw-controls {
+  background: transparent;
+  border: none;
+  padding: 0;
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#draw-controls.active {
+  display: flex;
+}
+
+.draw-control-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.draw-btn {
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 9px;
+  font-family: "DM Mono", monospace;
+  color: rgba(230, 232, 240, 0.5);
+  transition: color 150ms ease;
+  text-align: left;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.draw-btn:hover {
+  color: rgba(230, 232, 240, 0.8);
+}
+
+.draw-btn.active {
+  color: #39ff14;
+}
+
+.draw-label {
+  font-size: 9px;
+  color: rgba(230, 232, 240, 0.5);
+  font-family: "DM Mono", monospace;
+  white-space: nowrap;
+  line-height: 1.2;
+  margin-right: 4px;
+}
+
+#draw-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 99998;
+  pointer-events: none;
+  opacity: 0; /* Always hidden - only used for mask compositing */
+  display: none;
+}
+
+#draw-canvas.drawing-mode {
+  pointer-events: auto;
+  cursor: crosshair;
+  display: block;
+  opacity: 0; /* Keep invisible - effects will show the drawing */
+}
+
+/* Hide drawing mode on smaller screens */
+@media (max-width: 1300px) {
+  #draw-mode-container {
+    display: none !important;
+  }
+  #draw-canvas {
+    display: none !important;
+  }
+}
 

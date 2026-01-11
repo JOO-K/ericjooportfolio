@@ -431,8 +431,8 @@ export default class VideoThresholdEffect {
     this.springK = 40;
     this.damping = 6;
 
-    // per-cell state
-    this.cols = 0; this.rows = 0; this.cell = 24;
+    // per-cell state (INCREASED cell size for better performance on high-res displays)
+    this.cols = 0; this.rows = 0; this.cell = 32;
     this.state = null;           // Float32Array [ox,oy,vx,vy]*
 
     this._dt = 1/60;
@@ -746,7 +746,7 @@ export default class VideoThresholdEffect {
           continue;
         }
 
-        // ACTIVE (joystick engaged): lightweight color + morph
+        // ACTIVE (joystick engaged): Different noise patterns per direction
         const hueCenter = this._hueBase;
         const hue = (hueCenter + this._hueSpan * Math.sin(0.5 * tSec + 0.08 * gx - 0.07 * gy)
                      + this._hueSpan * this._bloom * colorInfluence) % 360;
@@ -755,25 +755,61 @@ export default class VideoThresholdEffect {
         p.stroke(`hsl(${(hue+360)%360}, ${sat}%, ${lit}%)`);
         p.strokeWeight(w);
 
-        const shapePhase = this._shapePhase * 3.0; // 0..3
-        const stage = Math.floor(shapePhase);
-        const localT = Math.max(0, Math.min(1, shapePhase - stage));
+        const noiseTime = tSec * 0.25;
+        let flowAngle, flowLength;
 
-        p.push();
-        p.translate(cx + ox, cy + oy);
-        p.rotate(angle);
-
-        if (stage === 0) {
-          drawLine(p, rlen);
-          if (localT > 0) { p.push(); p.drawingContext.globalAlpha = localT; drawCross(p, rlen); p.pop(); }
-        } else if (stage === 1) {
-          p.push(); p.drawingContext.globalAlpha = 1 - localT; drawCross(p, rlen);   p.pop();
-          p.push(); p.drawingContext.globalAlpha = localT;     drawDiamond(p, rlen); p.pop();
+        // Different noise pattern for each joystick direction
+        if (Math.abs(this._jy) > Math.abs(this._jx)) {
+          // UP/DOWN: Smooth Perlin flow field
+          if (this._jy < 0) {
+            // UP: Classic perlin noise flow
+            const noiseScale = 0.006;
+            const nx = p.noise((cx + ox) * noiseScale, (cy + oy) * noiseScale, noiseTime);
+            const ny = p.noise((cy + oy) * noiseScale, (cx + ox) * noiseScale, noiseTime + 100);
+            flowAngle = (nx - 0.5) * Math.PI * 4;
+            flowLength = rlen * (0.7 + ny * 0.5);
+          } else {
+            // DOWN: Turbulent flow (layered perlin)
+            const noiseScale = 0.01;
+            const n1 = p.noise((cx + ox) * noiseScale, (cy + oy) * noiseScale, noiseTime);
+            const n2 = p.noise((cx + ox) * noiseScale * 2.3, (cy + oy) * noiseScale * 2.3, noiseTime * 1.7);
+            const n3 = p.noise((cx + ox) * noiseScale * 4.1, (cy + oy) * noiseScale * 4.1, noiseTime * 2.3);
+            const turbulence = n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
+            flowAngle = (turbulence - 0.5) * Math.PI * 6;
+            flowLength = rlen * (0.6 + turbulence * 0.7);
+          }
         } else {
-          p.push(); p.drawingContext.globalAlpha = 1 - localT; drawDiamond(p, rlen); p.pop();
-          p.push(); p.drawingContext.globalAlpha = localT;     drawDot(p, rlen * 0.9); p.pop();
+          // LEFT/RIGHT: Different patterns
+          if (this._jx > 0) {
+            // RIGHT: Cellular/Voronoi-like (using distance from grid centers)
+            const cellSize = 80;
+            const cellX = Math.floor((cx + ox) / cellSize) * cellSize + cellSize / 2;
+            const cellY = Math.floor((cy + oy) / cellSize) * cellSize + cellSize / 2;
+            const dx = (cx + ox) - cellX;
+            const dy = (cy + oy) - cellY;
+            const dist = Math.sqrt(dx * dx + dy * dy) / cellSize;
+            const noise = p.noise(cellX * 0.01, cellY * 0.01, noiseTime);
+            flowAngle = Math.atan2(dy, dx) + noise * Math.PI * 2;
+            flowLength = rlen * (0.5 + dist * 0.8);
+          } else {
+            // LEFT: Radial/spiral flow
+            const centerX = p.width / 2;
+            const centerY = p.height / 2;
+            const dx = (cx + ox) - centerX;
+            const dy = (cy + oy) - centerY;
+            const radialAngle = Math.atan2(dy, dx);
+            const radialDist = Math.sqrt(dx * dx + dy * dy);
+            const noise = p.noise(radialDist * 0.003, noiseTime * 2);
+            flowAngle = radialAngle + noise * Math.PI + noiseTime * 0.5;
+            flowLength = rlen * (0.6 + noise * 0.6);
+          }
         }
 
+        // Draw the flowing line
+        p.push();
+        p.translate(cx + ox, cy + oy);
+        p.rotate(flowAngle);
+        p.line(-flowLength, 0, flowLength, 0);
         p.pop();
       }
     }

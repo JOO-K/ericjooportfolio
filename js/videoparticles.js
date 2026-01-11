@@ -298,10 +298,10 @@ export class VideoConnectedParticlesEffect {
     this.MAX_RIPPLES  = 6;
     this.ripples = [];
 
-    // ----- Floater spawn on click/tap (lighter) -----
-    this.SPAWN_ON_CLICK_COUNT = 12;
-    this.FLOATER_LIFETIME_SEC = 4.0;
-    this.FLOATER_MAX          = 180;
+    // ----- Floater spawn on click/tap (REDUCED for performance) -----
+    this.SPAWN_ON_CLICK_COUNT = 4;   // Reduced from 12 to 4
+    this.FLOATER_LIFETIME_SEC = 3.0; // Reduced from 4.0 to 3.0
+    this.FLOATER_MAX          = 100; // Reduced from 180 to 100
     this.SPAWN_RADIUS         = 60;
     this.SPAWN_SPEED_BOOST    = 120;
 

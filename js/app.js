@@ -148,8 +148,8 @@ function boot(effectKey = currentKey) {
         window.__middleUIReady = true;
       }
 
-      // kick off auto-rotation (only once)
-      startAutoRotate();
+      // Auto-rotation disabled - stays on video+threshold (ASCII) effect
+      // startAutoRotate();
       setP(90);
     };
 
@@ -461,6 +461,14 @@ function wireDock(joystickCallback) {
   const camBtn    = icoBtn('🎥', 'Webcam (W)');
   const demoBtn   = icoBtn('◼︎',  'Demo playlist (D)');
 
+  // Add tooltips
+  uploadBtn.classList.add('icon-tooltip');
+  uploadBtn.setAttribute('data-tooltip', 'Upload video');
+  camBtn.classList.add('icon-tooltip');
+  camBtn.setAttribute('data-tooltip', 'Use webcam');
+  demoBtn.classList.add('icon-tooltip');
+  demoBtn.setAttribute('data-tooltip', 'Demo playlist');
+
   const fileInput = mk('input', { position: 'absolute', left: '-9999px' });
   fileInput.type = 'file';
   fileInput.accept = 'video/*';  // iOS will now offer Photos / Files picker
@@ -770,6 +778,253 @@ function setActiveDot(key) {
 }
 
 /* =======================
+   Drawing Mode (Desktop only, > 1300px)
+   ======================= */
+function initDrawingMode() {
+  // Only init on desktop
+  if (window.innerWidth <= 1300) return;
+
+  // Create drawing canvas (this will be composited into the video mask)
+  // Use p5 canvas dimensions to match the mask canvas
+  const drawCanvas = document.createElement('canvas');
+  drawCanvas.id = 'draw-canvas';
+  const w = p5Instance?.width || window.innerWidth;
+  const h = p5Instance?.height || window.innerHeight;
+  drawCanvas.width = w;
+  drawCanvas.height = h;
+  document.body.appendChild(drawCanvas);
+
+  const ctx = drawCanvas.getContext('2d', { willReadFrequently: true });
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Ensure canvas starts fully transparent
+  ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+
+  // Store reference globally so playlist can access it
+  window.__drawingCanvas = drawCanvas;
+
+  // Create UI container
+  const container = document.createElement('div');
+  container.id = 'draw-mode-container';
+
+  // Toggle button (pencil icon)
+  const toggleBtn = document.createElement('div');
+  toggleBtn.id = 'draw-mode-toggle';
+  toggleBtn.innerHTML = '✏️';
+  toggleBtn.title = 'Draw mode';
+
+  // Controls panel
+  const controls = document.createElement('div');
+  controls.id = 'draw-controls';
+
+  // Tool selection (pencil/eraser)
+  const toolRow = document.createElement('div');
+  toolRow.className = 'draw-control-row';
+
+  const pencilBtn = document.createElement('div');
+  pencilBtn.className = 'draw-btn active';
+  pencilBtn.textContent = 'pencil';
+  pencilBtn.title = 'Pencil';
+
+  const eraserBtn = document.createElement('div');
+  eraserBtn.className = 'draw-btn';
+  eraserBtn.textContent = 'eraser';
+  eraserBtn.title = 'Eraser';
+
+  toolRow.appendChild(pencilBtn);
+  toolRow.appendChild(eraserBtn);
+
+  // Brush sizes
+  const sizeRow = document.createElement('div');
+  sizeRow.className = 'draw-control-row';
+
+  const smallBtn = document.createElement('div');
+  smallBtn.className = 'draw-btn';
+  smallBtn.textContent = 'small';
+  smallBtn.title = 'Small (8px)';
+  smallBtn.dataset.size = '8';
+
+  const medBtn = document.createElement('div');
+  medBtn.className = 'draw-btn active';
+  medBtn.textContent = 'medium';
+  medBtn.title = 'Medium (15px)';
+  medBtn.dataset.size = '15';
+
+  const largeBtn = document.createElement('div');
+  largeBtn.className = 'draw-btn';
+  largeBtn.textContent = 'large';
+  largeBtn.title = 'Large (25px)';
+  largeBtn.dataset.size = '25';
+
+  sizeRow.appendChild(smallBtn);
+  sizeRow.appendChild(medBtn);
+  sizeRow.appendChild(largeBtn);
+
+  // Clear button
+  const clearRow = document.createElement('div');
+  clearRow.className = 'draw-control-row';
+
+  const clearBtn = document.createElement('div');
+  clearBtn.className = 'draw-btn';
+  clearBtn.textContent = 'clear';
+  clearBtn.title = 'Clear drawing';
+
+  clearRow.appendChild(clearBtn);
+
+  // Exit button
+  const exitRow = document.createElement('div');
+  exitRow.className = 'draw-control-row';
+
+  const exitBtn = document.createElement('div');
+  exitBtn.className = 'draw-btn';
+  exitBtn.textContent = 'exit';
+  exitBtn.title = 'Exit draw mode';
+
+  exitRow.appendChild(exitBtn);
+
+  // Assemble controls
+  controls.appendChild(toolRow);
+  controls.appendChild(sizeRow);
+  controls.appendChild(clearRow);
+  controls.appendChild(exitRow);
+
+  container.appendChild(toggleBtn);
+  container.appendChild(controls);
+  document.body.appendChild(container);
+
+  // State
+  let isDrawing = false;
+  let drawMode = false;
+  let tool = 'pencil'; // 'pencil' or 'eraser'
+  let brushSize = 15;
+  let lastX = 0;
+  let lastY = 0;
+
+  // Toggle draw mode
+  toggleBtn.addEventListener('click', () => {
+    drawMode = !drawMode;
+    controls.classList.toggle('active', drawMode);
+    drawCanvas.classList.toggle('drawing-mode', drawMode);
+    if (drawMode) {
+      drawCanvas.classList.add('pencil-active');
+    } else {
+      drawCanvas.classList.remove('pencil-active', 'eraser-active');
+    }
+  });
+
+  // Tool selection
+  pencilBtn.addEventListener('click', () => {
+    tool = 'pencil';
+    pencilBtn.classList.add('active');
+    eraserBtn.classList.remove('active');
+    drawCanvas.classList.remove('eraser-active');
+    drawCanvas.classList.add('pencil-active');
+  });
+
+  eraserBtn.addEventListener('click', () => {
+    tool = 'eraser';
+    eraserBtn.classList.add('active');
+    pencilBtn.classList.remove('active');
+    drawCanvas.classList.remove('pencil-active');
+    drawCanvas.classList.add('eraser-active');
+  });
+
+  // Size selection
+  [smallBtn, medBtn, largeBtn].forEach(btn => {
+    btn.addEventListener('click', () => {
+      brushSize = parseInt(btn.dataset.size);
+      [smallBtn, medBtn, largeBtn].forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Clear canvas
+  clearBtn.addEventListener('click', () => {
+    ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+  });
+
+  // Exit draw mode
+  exitBtn.addEventListener('click', () => {
+    drawMode = false;
+    controls.classList.remove('active');
+    drawCanvas.classList.remove('drawing-mode', 'pencil-active', 'eraser-active');
+  });
+
+  // Drawing functions
+  function startDrawing(e) {
+    if (!drawMode) return;
+    isDrawing = true;
+    const rect = drawCanvas.getBoundingClientRect();
+    lastX = e.clientX - rect.left;
+    lastY = e.clientY - rect.top;
+  }
+
+  function draw(e) {
+    if (!isDrawing || !drawMode) return;
+
+    const rect = drawCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    if (tool === 'pencil') {
+      // Draw pure black with full opacity for silhouette detection
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = 'rgba(0, 0, 0, 1)'; // Pure black, fully opaque
+      ctx.fillStyle = 'rgba(0, 0, 0, 1)';
+      ctx.lineWidth = brushSize;
+    } else {
+      // Eraser mode
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineWidth = brushSize * 3;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+
+    lastX = x;
+    lastY = y;
+  }
+
+  function stopDrawing() {
+    isDrawing = false;
+  }
+
+  // Event listeners
+  drawCanvas.addEventListener('mousedown', startDrawing);
+  drawCanvas.addEventListener('mousemove', draw);
+  drawCanvas.addEventListener('mouseup', stopDrawing);
+  drawCanvas.addEventListener('mouseleave', stopDrawing);
+
+  // Resize handler
+  window.addEventListener('resize', () => {
+    if (window.innerWidth <= 1300) {
+      container.style.display = 'none';
+      drawCanvas.style.display = 'none';
+    } else {
+      container.style.display = 'flex';
+      drawCanvas.style.display = 'block';
+      // Resize canvas to match p5 canvas dimensions
+      const imgData = ctx.getImageData(0, 0, drawCanvas.width, drawCanvas.height);
+      const newW = p5Instance?.width || window.innerWidth;
+      const newH = p5Instance?.height || window.innerHeight;
+      drawCanvas.width = newW;
+      drawCanvas.height = newH;
+      ctx.putImageData(imgData, 0, 0);
+    }
+  });
+}
+
+/* =======================
    Start
    ======================= */
 boot();
+
+// Initialize drawing mode after a short delay
+setTimeout(() => {
+  if (window.innerWidth > 1300) {
+    initDrawingMode();
+  }
+}, 500);

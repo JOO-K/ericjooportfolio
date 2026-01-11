@@ -350,6 +350,13 @@ export class VideoPlaylist {
 
     try {
       ctx.drawImage(this.vidEl, dx, dy, dw, dh);
+
+      // Composite user drawings into the mask
+      // Drawings are black pixels that should be detected as silhouette
+      if (window.__drawingCanvas) {
+        ctx.drawImage(window.__drawingCanvas, 0, 0, width, height);
+      }
+
       this.maskData = ctx.getImageData(0, 0, width, height).data;
     } catch {
       this.maskData = null;

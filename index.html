@@ -134,15 +134,15 @@
         addLogLine('   [7] Midnight Code - 3:54', delay); delay += lineDelay;
         addLogLine('   [8] Cyber Noir - 4:18', delay); delay += lineDelay + 80;
 
-        // HOMER
+        // HOMER Archives
         addLogLine('', delay); delay += 20;
-        addLogLine('>> HOMER Project Archive', delay); delay += lineDelay + 50;
+        addLogLine('>> HOMER Archives', delay); delay += lineDelay + 50;
         addLogLine('   _______   _______   _______    _______   _______ ', delay); delay += lineDelay;
         addLogLine(' ╱    ╱  ╲╲╱       ╲╲╱       ╲╲╱╱       ╲╱╱       ╲', delay); delay += lineDelay;
         addLogLine('╱        ╱╱        ╱╱        ╱╱╱        ╱╱        ╱', delay); delay += lineDelay;
         addLogLine('╱         ╱         ╱         ╱        _╱        _╱ ', delay); delay += lineDelay;
         addLogLine('╲___╱____╱╲________╱╲__╱__╱__╱╲________╱╲____╱___╱', delay); delay += lineDelay + 50;
-        addLogLine('Work archive & project navigation', delay); delay += lineDelay + 80;
+        addLogLine('Project archive & work navigation system', delay); delay += lineDelay + 80;
 
         // ARGOS joystick
         addLogLine('', delay); delay += 20;
@@ -154,17 +154,33 @@
         addLogLine('ARGOS - Adaptive Real-time Gesture-based Operating System', delay); delay += lineDelay;
         addLogLine('Joystick interface initialized', delay); delay += lineDelay + 80;
 
+        // Video Effects
+        addLogLine('', delay); delay += 20;
+        addLogLine('>> Loading Visual Effects Suite...', delay); delay += lineDelay + 50;
+        addLogLine('   [FX-1] ASCII Threshold - perlin noise flow fields', delay); delay += lineDelay;
+        addLogLine('   [FX-2] Connected Particles - voronoi mesh system', delay); delay += lineDelay;
+        addLogLine('   [FX-3] Bezier Trails - edge-following curves', delay); delay += lineDelay;
+        addLogLine('   [FX-4] ASCII Drips - liquid distortion shader', delay); delay += lineDelay;
+        addLogLine('   [FX-5] Fractal Mosaic - recursive video tiles', delay); delay += lineDelay + 80;
+
+        // Background Video
+        addLogLine('', delay); delay += 20;
+        addLogLine('>> Loading Background Media...', delay); delay += lineDelay + 50;
+        addLogLine('   Video: "The Journey" - experimental documentation', delay); delay += lineDelay;
+        addLogLine('   Real-time processing enabled', delay); delay += lineDelay;
+        addLogLine('   Interactive layer compositing active', delay); delay += lineDelay + 80;
+
         // Final messages - emphasize website assets
         addLogLine('', delay); delay += 20;
         addLogLine('>> Portfolio assets loaded successfully', delay); delay += lineDelay;
         addLogLine('   5 visual effects ready', delay); delay += lineDelay;
         addLogLine('   8 audio tracks available', delay); delay += lineDelay;
         addLogLine('   ARGOS navigation active', delay); delay += lineDelay;
-        addLogLine('   HOMER projects online', delay); delay += lineDelay + 100;
+        addLogLine('   HOMER Archives online', delay); delay += lineDelay + 100;
         addLogLine('', delay); delay += 20;
         addLogLine('>> Welcome to the portfolio', delay); delay += lineDelay;
         addLogLine('   Interact with effects via ARGOS joystick', delay); delay += lineDelay;
-        addLogLine('   Browse projects via HOMER menu', delay); delay += lineDelay + 100;
+        addLogLine('   Browse projects via HOMER Archives', delay); delay += lineDelay + 100;
         addLogLine('', delay); delay += 20;
         addLogLine('░▒▓ Website loaded ▓▒░', delay); delay += lineDelay;
         addLogLine('================================================', delay); delay += lineDelay + 100;
@@ -175,7 +191,9 @@
         addLogLine('  █    ▌ ▐    █    ', delay); delay += lineDelay;
         addLogLine(' ▄▀▄▄▄▄▄    ▄   ▀▄  ', delay); delay += lineDelay;
         addLogLine(' █    ▐     ▀▀▀▀   ', delay); delay += lineDelay;
-        addLogLine(' ▐', delay); delay += lineDelay + 100;
+        addLogLine(' ▐', delay); delay += lineDelay + 80;
+        addLogLine('', delay); delay += 20;
+        addLogLine('>> Have fun!', delay); delay += lineDelay;
 
         // Enable scrolling after boot sequence completes
         setTimeout(() => {
@@ -255,7 +273,7 @@
     const typewriter = new Typewriter(app, { loop: false, delay: 5 });
     typewriter
       .pauseFor(0)
-      .typeString('Eric Joo (Kyung Hyun) is a Creative Technologist working with Generative AI workflows and Real-Time systems.')
+      .typeString('Eric Joo (Kyung Hyun) is a Creative Technologist working with Generative AI workflows and Real-Time systems.<br>ericjoodesign@gmail.com')
       .pauseFor(100)
       .start();
   </script>
